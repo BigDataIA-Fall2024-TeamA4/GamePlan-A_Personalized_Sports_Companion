@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "final project"
+version = "0.1.0"
+description = ""
+authors = ["Siddharth-Dattaram-Pawar <pawar.sid@northeastern.edu>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "3.12.1"
+fastapi = "^0.115.5"
+streamlit = "^1.40.2"
+requests = "^2.32.3"
+python-dotenv = "^1.0.1"
+snowflake-connector-python = "^3.12.3"
+pydantic = "^2.10.2"
+uvicorn = "^0.32.1"
+python-jose = "^3.3.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
