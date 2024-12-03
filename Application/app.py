@@ -29,9 +29,8 @@ def sign_up():
             options=["Soccer", "Basketball", "Cricket", "Tennis", "American Football"],
             help="Select one or more sports interests!"
         )
-        interests_json = json.dumps(interests)  # Convert selected interests to JSON string
+        interests_json = json.dumps(interests)
 
-        # Expertise Level - Slider
         selected_expertise = st.select_slider(
             'Select Expertise Level',
             options= ("Beginner", "Intermediate", "Advanced", "Professional"),
@@ -41,7 +40,6 @@ def sign_up():
         submit_button = st.form_submit_button('Sign Up')
 
         if submit_button:
-            # Validate password strength
             if not (any(c.isupper() for c in password1) and 
                     any(c.isdigit() for c in password1) and 
                     any(c in "!@#$%^&*()_+" for c in password1) and 
@@ -50,22 +48,37 @@ def sign_up():
             elif password1 != password2:
                 st.error("Password and Confirm Password do not match!")
             else:
-                # Send data to FastAPI to store in Snowflake DB
                 data = {
                     "email": email,
                     "username": username,
                     "password": password1,
                     "first_name": first_name,
                     "last_name": last_name,
-                    "interests": interests_json,  # Pass the JSON string of interests
-                    "expertise_level": selected_expertise  # Pass the selected expertise level
+                    "interests": interests_json,
+                    "expertise_level": selected_expertise
                 }
                 
-                # Make the POST request to FastAPI
                 response = requests.post(f"{FASTAPI_URL}/register", json=data)
                 
                 if response.status_code == 200:
-                    st.success("Registration successful!")
+                    # Automatically log in the user after successful registration
+                    login_data = {
+                        "username": username,
+                        "password": password1
+                    }
+                    login_response = requests.post(f"{FASTAPI_URL}/login", json=login_data)
+                    
+                    if login_response.status_code == 200:
+                        user_data = login_response.json()
+                        st.session_state["access_token"] = user_data.get("access_token")
+                        st.session_state["first_name"] = user_data.get("first_name")
+                        st.session_state["email"] = user_data.get("email")
+                        st.session_state["username"] = username
+                        st.session_state["password"] = password1
+                        st.session_state["interests"] = user_data.get("interests")
+                        st.session_state["expertise_level"] = user_data.get("expertise_level")
+                        st.success("Registration successful!")
+                        st.rerun()
                 else:
                     st.error("Username already exists!")
 
@@ -92,6 +105,11 @@ def login():
                 user_data = response.json()  # Assuming FastAPI returns user data (e.g., first_name)
                 st.session_state["access_token"] = user_data.get("access_token")
                 st.session_state["first_name"] = user_data.get("first_name")
+                st.session_state["email"] = user_data.get("email")
+                st.session_state["username"] = username
+                st.session_state["password"] = password
+                st.session_state["interests"] = user_data.get("interests")
+                st.session_state["expertise_level"] = user_data.get("expertise_level")
                 st.success("Login successful!")
                 st.rerun()  # Redirect to main page
             else:
@@ -115,6 +133,108 @@ def menu_login():
     elif menu_option == "Login":
         login()
 
+def update_password(username, new_password):
+    response = requests.put(f"{FASTAPI_URL}/update_password", json={
+        "username": username,
+        "new_password": new_password
+    })
+    if response.status_code != 200:
+        st.sidebar.error("Failed to update password. Please try again.")
+
+def update_interests(username, interests_json):
+    response = requests.put(f"{FASTAPI_URL}/update_interests", json={
+        "username": username,
+        "interests": interests_json
+    })
+    if response.status_code != 200:
+        st.sidebar.error("Failed to update interests. Please try again.")
+
+def update_expertise(username, expertise_level):
+    response = requests.put(f"{FASTAPI_URL}/update_expertise", json={
+        "username": username,
+        "expertise_level": expertise_level
+    })
+    if response.status_code != 200:
+        st.sidebar.error("Failed to update expertise level. Please try again.")
+
+def update_profile():
+    st.sidebar.subheader("Update Profile")
+    
+    # Display email (non-editable)
+    st.sidebar.text(f"Email: {st.session_state['email']}")
+    
+    # Update password
+    new_password = st.sidebar.text_input("New Password", type="password")
+    confirm_password = st.sidebar.text_input("Confirm New Password", type="password")
+    
+    # Update interests
+    interests = st.sidebar.multiselect(
+        'Update Interests',
+        options=["Soccer", "Basketball", "Cricket", "Tennis", "American Football"],
+        default=json.loads(st.session_state['interests']),
+        help="Select one or more sports interests!"
+    )
+    
+    # Add expertise level update
+    expertise_level = st.sidebar.select_slider(
+        'Update Expertise Level',
+        options=["Beginner", "Intermediate", "Advanced", "Professional"],
+        value=st.session_state['expertise_level'],
+        help="Select your expertise level."
+    )
+    
+    if st.sidebar.button("Update Profile"):
+        password_updated = False
+        interests_updated = False
+        expertise_updated = False
+        
+        # Handle password update if new password is entered
+        if new_password:
+            if new_password == st.session_state['password']:
+                st.sidebar.error("New password must be different from the current password.")
+            elif new_password != confirm_password:
+                st.sidebar.error("New password and confirmation do not match.")
+            elif not (any(c.isupper() for c in new_password) and 
+                      any(c.isdigit() for c in new_password) and 
+                      any(c in "!@#$%^&*()_+" for c in new_password) and 
+                      len(new_password) >= 8):
+                st.sidebar.error("Password should contain at least 1 uppercase letter, 1 special character, 1 numerical character, and be at least 8 characters long!")
+            else:
+                update_password(st.session_state['username'], new_password)
+                st.session_state['password'] = new_password
+                password_updated = True
+
+        # Handle interests update if interests have changed
+        current_interests = set(json.loads(st.session_state['interests']))
+        new_interests = set(interests)
+        if current_interests != new_interests:
+            interests_json = json.dumps(interests)
+            update_interests(st.session_state['username'], interests_json)
+            st.session_state['interests'] = interests_json
+            interests_updated = True
+            
+        # Handle expertise level update if changed
+        if expertise_level != st.session_state['expertise_level']:
+            update_expertise(st.session_state['username'], expertise_level)
+            st.session_state['expertise_level'] = expertise_level
+            expertise_updated = True
+        
+        # Show success messages based on what was updated
+        if password_updated and interests_updated and expertise_updated:
+            st.sidebar.success("Profile updated successfully!")
+        elif password_updated and interests_updated:
+            st.sidebar.success("Password and interests updated successfully!")
+        elif password_updated and expertise_updated:
+            st.sidebar.success("Password and expertise level updated successfully!")
+        elif interests_updated and expertise_updated:
+            st.sidebar.success("Interests and expertise level updated successfully!")
+        elif password_updated:
+            st.sidebar.success("Password updated successfully!")
+        elif interests_updated:
+            st.sidebar.success("Interests updated successfully!")
+        elif expertise_updated:
+            st.sidebar.success("Expertise level updated successfully!")
+
 # Main page after login
 def main_page():
     ''' Main page layout '''
@@ -137,7 +257,10 @@ def main_page():
         with st.expander(f"Hello {st.session_state['first_name']}"):
             if st.button("Logout"):
                 st.session_state.clear()
-                st.experimental_rerun()
+                st.rerun()
+        
+        # Add Profile Update Section
+        update_profile()
 
 # Main navigation
 if "access_token" not in st.session_state:
