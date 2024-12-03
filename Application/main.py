@@ -6,6 +6,7 @@ from pydantic import BaseModel
 import snowflake.connector
 import os
 from dotenv import load_dotenv
+from fastapi.responses import Response
 
 load_dotenv()
 
@@ -113,24 +114,97 @@ async def login_user(user: UserLogin):
         conn = get_snowflake_connection()
         cursor = conn.cursor()
 
-        # Check if username and password are correct
-        cursor.execute(f"SELECT FIRST_NAME FROM USERS WHERE USERNAME = '{user.username}' AND PASSWORD = '{user.password}'")
+        cursor.execute(f"SELECT FIRST_NAME, EMAIL, INTERESTS, EXPERTISE_LEVEL FROM USERS WHERE USERNAME = '{user.username}' AND PASSWORD = '{user.password}'")
         result = cursor.fetchone()
         cursor.close()
         conn.close()
         
         if result:
-            # Generate JWT Token
             access_token = create_access_token(data={"sub": user.username})
-            return {"access_token": access_token, "token_type": "bearer", "first_name": result[0]}
+            return {
+                "access_token": access_token,
+                "token_type": "bearer",
+                "first_name": result[0],
+                "email": result[1],
+                "interests": result[2],
+                "expertise_level": result[3]
+            }
         else:
             raise HTTPException(status_code=400, detail="Invalid username or password!")
     
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error: {str(e)}")
 
+@app.put("/update_password")
+async def update_user_password(data: dict):
+    try:
+        conn = get_snowflake_connection()
+        cursor = conn.cursor()
+
+        query = f"""
+            UPDATE USERS
+            SET PASSWORD = '{data['new_password']}'
+            WHERE USERNAME = '{data['username']}'
+        """
+        cursor.execute(query)
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return {"message": "Password updated successfully!"}
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error: {str(e)}")
+
+@app.put("/update_interests")
+async def update_user_interests(data: dict):
+    try:
+        conn = get_snowflake_connection()
+        cursor = conn.cursor()
+
+        query = f"""
+            UPDATE USERS
+            SET INTERESTS = PARSE_JSON('{data['interests']}')
+            WHERE USERNAME = '{data['username']}'
+        """
+        cursor.execute(query)
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return {"message": "Interests updated successfully!"}
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error: {str(e)}")
+
+@app.put("/update_expertise")
+async def update_user_expertise(data: dict):
+    try:
+        conn = get_snowflake_connection()
+        cursor = conn.cursor()
+
+        query = f"""
+            UPDATE USERS
+            SET EXPERTISE_LEVEL = '{data['expertise_level']}'
+            WHERE USERNAME = '{data['username']}'
+        """
+        cursor.execute(query)
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return {"message": "Expertise level updated successfully!"}
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error: {str(e)}")
+        
 # Example protected endpoint
 @app.get("/protected-endpoint")
 async def protected_endpoint(token: str = Depends(oauth2_scheme)):
     username = verify_token(token)
     return {"message": f"Hello, {username}. This is a protected endpoint!"}
+
+@app.get("/")
+async def read_root():
+    return {"message": "Welcome to the FastAPI application!"}
+
+@app.get("/favicon.ico")
+async def favicon():
+    return Response(status_code=204)
