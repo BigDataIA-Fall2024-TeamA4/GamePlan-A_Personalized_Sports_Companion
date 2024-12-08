@@ -1,0 +1,14 @@
+# Ignore Hugging Face cache
+AIRFLOW/huggingface_cache/
+
+# Ignore system files and virtual environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.DS_Store
+
+# Ignore Docker files and logs
+*.log
+docker-compose.override.yml
