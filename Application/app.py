@@ -10,6 +10,12 @@ load_dotenv()
 # Fetch the FastAPI URL from environment variables
 FASTAPI_URL = os.getenv('FASTAPI_URL')
 
+if "interests" not in st.session_state:
+    st.session_state.interests = []
+
+if "expertise_level" not in st.session_state:
+    st.session_state.expertise_level = "Beginner"  # Set a default value
+
 # Function to create a sign-up form
 def sign_up():
     ''' Sign up form with validations '''
@@ -84,36 +90,31 @@ def sign_up():
 
 # Function for login
 def login():
-    ''' Login form '''
-    with st.form(key='login', clear_on_submit=True):
-        st.subheader('Login')
-        username = st.text_input('Username', placeholder='Enter Your Username!')
-        password = st.text_input('Password', placeholder='Enter Your Password!', type='password')
-        
-        submit_button = st.form_submit_button('Login')
-        
+    with st.form(key="login_form"):
+        st.subheader("Login")
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submit_button = st.form_submit_button("Login")
+
         if submit_button:
-            # Send data to FastAPI to validate credentials
-            data = {
-                "username": username,
-                "password": password
-            }
-            
-            response = requests.post(f"{FASTAPI_URL}/login", json=data)
-            
+            response = requests.post(f"{FASTAPI_URL}/login", json={"username": username, "password": password})
+
             if response.status_code == 200:
-                user_data = response.json()  # Assuming FastAPI returns user data (e.g., first_name)
-                st.session_state["access_token"] = user_data.get("access_token")
-                st.session_state["first_name"] = user_data.get("first_name")
-                st.session_state["email"] = user_data.get("email")
+                user_data = response.json()
+                st.success(f"Welcome back, {user_data['first_name']}!")
+
+                # Store session variables
+                st.session_state["logged_in"] = True
+                st.session_state["first_name"] = user_data["first_name"]
+                st.session_state["email"] = user_data["email"]
                 st.session_state["username"] = username
-                st.session_state["password"] = password
-                st.session_state["interests"] = user_data.get("interests")
-                st.session_state["expertise_level"] = user_data.get("expertise_level")
-                st.success("Login successful!")
-                st.rerun()  # Redirect to main page
+                st.session_state["personalized_feed"] = user_data["personalized_feed"]
+
+                # Redirect to the main page
+                st.rerun()  # Forces the app to refresh and load the main page
             else:
                 st.error("Invalid username or password!")
+
 
 # Navigation menu for login/signup
 def menu_login():
@@ -170,8 +171,8 @@ def update_profile():
     # Update interests
     interests = st.sidebar.multiselect(
         'Update Interests',
-        options=["Soccer", "Basketball", "Cricket", "Tennis", "American Football"],
-        default=json.loads(st.session_state['interests']),
+        options=["Basketball", "Cricket", "Tennis", "Football"],
+        default=st.session_state.interests,
         help="Select one or more sports interests!"
     )
     
@@ -179,7 +180,7 @@ def update_profile():
     expertise_level = st.sidebar.select_slider(
         'Update Expertise Level',
         options=["Beginner", "Intermediate", "Advanced", "Professional"],
-        value=st.session_state['expertise_level'],
+        value=st.session_state.expertise_level,
         help="Select your expertise level."
     )
     
@@ -205,13 +206,20 @@ def update_profile():
                 password_updated = True
 
         # Handle interests update if interests have changed
-        current_interests = set(json.loads(st.session_state['interests']))
+        current_interests = set(st.session_state['interests'] if isinstance(st.session_state['interests'], list) else json.loads(st.session_state['interests']))
         new_interests = set(interests)
         if current_interests != new_interests:
-            interests_json = json.dumps(interests)
+            interests_json = json.dumps(list(new_interests))
             update_interests(st.session_state['username'], interests_json)
-            st.session_state['interests'] = interests_json
+            st.session_state['interests'] = interests_json  # Store as JSON string
             interests_updated = True
+            # Refresh the feed after updating interests
+            login_response = requests.post(f"{FASTAPI_URL}/login", 
+                                           json={"username": st.session_state['username'], 
+                                                 "password": st.session_state['password']})
+            if login_response.status_code == 200:
+                st.session_state["personalized_feed"] = login_response.json()["personalized_feed"]
+                st.rerun()
             
         # Handle expertise level update if changed
         if expertise_level != st.session_state['expertise_level']:
@@ -235,35 +243,79 @@ def update_profile():
         elif expertise_updated:
             st.sidebar.success("Expertise level updated successfully!")
 
+def display_news(news_feed, title):
+    st.subheader(title)
+    # Check if the news_feed is a dictionary
+    if isinstance(news_feed, dict):
+        news_feed = news_feed.get("news", [])  # Adjust this key based on the actual data structure
+
+    # Check if it's now a list
+    if not isinstance(news_feed, list):
+        st.error("News feed is not in the expected format. Please check the API response.")
+        return
+
+    # Iterate through the list of news articles
+    for article in news_feed:
+        if isinstance(article, dict):  # Ensure each article is a dictionary
+            st.markdown(
+                f"""
+                <div style="border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin-bottom: 20px; background-color: #f9f9f9;">
+                    <img src="{article.get('image_link', '')}" alt="{article.get('title', 'Image')}" style="width:100%; border-radius: 8px;" />
+                    <div style="padding: 10px 0;">
+                        <span style="background-color: #0056b3; color: white; padding: 3px 8px; font-size: 12px; border-radius: 3px;">{article.get('category', 'Uncategorized')}</span>
+                        <h4><a href="{article.get('link', '#')}" target="_blank" style="color: #0056b3; text-decoration: none;">{article.get('title', 'Untitled')}</a></h4>
+                        <p style="color: black;">{article.get('description', 'No description available.')}</p>
+                        <small style="color: black;">Published: {article.get('published_date', 'Unknown')} | Source: {article.get('source', 'Unknown')}</small>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+        else:
+            st.warning("Invalid article format. Skipping...")
+
 # Main page after login
 def main_page():
-    ''' Main page layout '''
-    col1, col2, col3 = st.columns([1, 2, 1])  # Adjust column widths to center the logo
-    with col2:
-        st.image("logo.png", width=200)
-    tabs = st.tabs(["Fixtures", "Feed", "Skill Upgrades"])
-    
-    with tabs[0]:
-        st.write("Fixtures Content Here")
-    
-    with tabs[1]:
-        st.write("Feed Content Here")
-    
-    with tabs[2]:
-        st.write("Skill Upgrades Content Here")
+    if "logged_in" not in st.session_state or not st.session_state["logged_in"]:
+        st.title("GamePlan: Personalized Sports News")
+        login()
+        return
 
-    # User Profile Section
-    with st.sidebar:
-        with st.expander(f"Hello {st.session_state['first_name']}"):
-            if st.button("Logout"):
-                st.session_state.clear()
-                st.rerun()
-        
-        # Add Profile Update Section
-        update_profile()
+    st.markdown(
+        """
+        <style>
+        body, .stApp {
+            background-color: black;
+            color: white;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+    tabs = st.tabs(["Fixtures", "Feed", "Skill Upgrades"])
+
+    with tabs[1]:
+        st.subheader("News Feed")
+
+        # Fetch all news from FastAPI
+        if "all_news" not in st.session_state:
+            response = requests.get(f"{FASTAPI_URL}/all_news")
+            if response.status_code == 200:
+                try:
+                    all_news = response.json()
+                    st.session_state["all_news"] = all_news  # Cache the news articles
+                    #st.write("Debug: Response from /all_news", all_news)
+                    display_news(st.session_state["all_news"], "All News")
+                except Exception as e:
+                    st.error(f"Error parsing news data: {e}")
+            else:
+                st.error("Failed to fetch today's news. Please try again later.")
+        else:
+            display_news(st.session_state["all_news"], "All News")
 
 # Main navigation
-if "access_token" not in st.session_state:
-    menu_login()
+if "logged_in" in st.session_state and st.session_state["logged_in"]:
+    main_page()  # Show the homepage with tabs if the user is logged in
 else:
-    main_page()
+    menu_login() 
