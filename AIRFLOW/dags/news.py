@@ -10,7 +10,7 @@ from rapidfuzz import fuzz
 import boto3
 import json
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, List, Dict, Optional
 
 # Load environment variables
 load_dotenv()
@@ -138,46 +138,130 @@ def save_data_to_s3(**kwargs) -> None:
         raise e
 
 # Create embeddings and store in Pinecone
-def create_embeddings(**kwargs) -> None:
+def create_embeddings(**kwargs) -> Optional[List[str]]:
     from sentence_transformers import SentenceTransformer
     from huggingface_hub import login
 
-    HUGGING_FACE_API_KEY = os.getenv("HUGGING_FACE_API_KEY")
+    try:
+        HUGGING_FACE_API_KEY = os.getenv("HUGGING_FACE_API_KEY")
+        PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+        PINECONE_ENVIRONMENT = os.getenv("PINECONE_ENVIRONMENT")
 
-    if not PINECONE_API_KEY or not PINECONE_ENVIRONMENT:
-        raise ValueError("Pinecone API Key or Environment Missing")
-    if not HUGGING_FACE_API_KEY:
-        raise ValueError("Hugging Face API Key Missing")
+        if not all([PINECONE_API_KEY, PINECONE_ENVIRONMENT, HUGGING_FACE_API_KEY]):
+            raise ValueError("Missing API keys or environment variables")
 
-    login(token=HUGGING_FACE_API_KEY)
-    pc = Pinecone(api_key=PINECONE_API_KEY)
-    index = pc.Index('sports-news')
-    model = SentenceTransformer("BAAI/bge-small-en-v1.5")
+        login(token=HUGGING_FACE_API_KEY)
+        pc = Pinecone(api_key=PINECONE_API_KEY)
+        index = pc.Index('sports-news')
 
-    articles = kwargs['ti'].xcom_pull(task_ids='fetch_news', key='articles')
+        model = SentenceTransformer("BAAI/bge-small-en-v1.5")
 
-    for article in articles:
-        try:
-            text_to_embed = f"{article['title']} {article['description']} {article['category']}"
-            embedding = model.encode(text_to_embed)
+        articles: List[Dict[str, Any]] = kwargs['ti'].xcom_pull(task_ids='fetch_news', key='articles')
+        if not articles:
+            raise ValueError("No articles found for embedding.")
 
-            metadata = {
-                'title': article['title'],
-                'description': article['description'],
-                'source': article['source'],
-                'category': article['category'],
-                'published_date': article['published_date'],
-                'timestamp': article['timestamp']
-            }
+        embedded_ids = []
 
-            if article['image_link']:
-                metadata['image_link'] = article['image_link']
+        for article in articles:
+            try:
+                # Check if the article is already in Pinecone
+                existing_vector = index.fetch(ids=[article['link']])
+                if existing_vector and 'vectors' in existing_vector:
+                    print(f"Skipping existing article: {article['title']}")
+                    continue  # Skip if already processed
 
-            index.upsert(
-                vectors=[(article['link'], embedding.tolist(), metadata)]
-            )
-        except Exception as e:
-            print(f"Error creating embedding for article '{article['title']}': {str(e)}")
+                metadata = {
+                    "title": article['title'],
+                    "description": article['description'],
+                    "source": article['source'],
+                    "category": article['category'],
+                    "published_date": article['published_date'],
+                    "image_link": article.get('image_link'),
+                    "timestamp": article['timestamp']
+                }
+
+                category_embedding = model.encode(article['category'])
+                title_embedding = model.encode(article['title'])
+                description_embedding = model.encode(article['description'])
+
+                index.upsert(
+                    vectors=[
+                        (f"{article['link']}_category", category_embedding.tolist(), metadata),
+                        (f"{article['link']}_title", title_embedding.tolist(), metadata),
+                        (f"{article['link']}_description", description_embedding.tolist(), metadata),
+                    ]
+                )
+
+                print(f"Embeddings created for {article['title']}")
+                embedded_ids.extend([
+                    f"{article['link']}_category",
+                    f"{article['link']}_title",
+                    f"{article['link']}_description"
+                ])
+
+            except Exception as e:
+                print(f"Error embedding article '{article['title']}': {str(e)}")
+
+        return embedded_ids
+
+    except Exception as e:
+        print(f"Critical Error in create_embeddings: {str(e)}")
+        return None
+    
+def cleanup_old_news(**kwargs) -> Optional[int]:
+    try:
+        PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+        PINECONE_ENVIRONMENT = os.getenv("PINECONE_ENVIRONMENT")
+
+        if not PINECONE_API_KEY or not PINECONE_ENVIRONMENT:
+            raise ValueError("Pinecone API Key or Environment Missing")
+
+        # Initialize Pinecone client
+        pc = Pinecone(api_key=PINECONE_API_KEY)
+        index = pc.Index('sports-news')
+
+        # Current timestamp
+        current_time = datetime.utcnow()
+
+        # Fetch all vector metadata
+        index_stats = index.describe_index_stats()
+
+        if not index_stats or 'namespaces' not in index_stats:
+            print("No namespaces found in Pinecone index.")
+            return 0
+
+        deleted_count = 0
+
+        # Iterate through all namespaces
+        for namespace, stats in index_stats['namespaces'].items():
+            vector_ids = []
+
+            # Collect all vector IDs
+            for vector_id, vector_data in stats.get('vectors', {}).items():
+                try:
+                    metadata = vector_data['metadata']
+                    news_timestamp = datetime.fromisoformat(metadata['timestamp'])
+
+                    # Check if older than 2 days
+                    if (current_time - news_timestamp) > timedelta(days=2):
+                        vector_ids.append(vector_id)
+                        print(f"Marked for deletion: {vector_id}")
+
+                except Exception as e:
+                    print(f"Error processing vector '{vector_id}': {str(e)}")
+
+            # Delete collected vectors
+            if vector_ids:
+                index.delete(ids=vector_ids, namespace=namespace)
+                deleted_count += len(vector_ids)
+                print(f"Deleted {len(vector_ids)} vectors from namespace '{namespace}'.")
+
+        print(f"Total deleted entries: {deleted_count}")
+        return deleted_count
+
+    except Exception as e:
+        print(f"Critical Error in cleanup_old_news: {str(e)}")
+        return None
 
 # Default arguments for the DAG
 default_args = {
@@ -217,4 +301,10 @@ with DAG(
         provide_context=True
     )
     
-    fetch_task >> save_raw_data_task >> embed_task
+    cleanup_task = PythonOperator(
+        task_id='cleanup_old_news',
+        python_callable=cleanup_old_news,
+        provide_context=True
+    )
+
+    fetch_task >> save_raw_data_task >> embed_task >> cleanup_task
