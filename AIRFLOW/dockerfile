@@ -19,4 +19,5 @@ RUN pip install --upgrade pip && \
         transformers==4.41.0 \
         python-dotenv \
         rapidfuzz==2.15.1 \
-        boto3
+        boto3 \
+        openai==0.28
