@@ -89,6 +89,7 @@ def sign_up():
                     st.error("Username already exists!")
 
 # Function for login
+# Correct handling in Streamlit
 def login():
     with st.form(key="login_form"):
         st.subheader("Login")
@@ -101,17 +102,17 @@ def login():
 
             if response.status_code == 200:
                 user_data = response.json()
-                st.success(f"Welcome back, {user_data['first_name']}!")
-
-                # Store session variables
+                
+                # Store session state
                 st.session_state["logged_in"] = True
                 st.session_state["first_name"] = user_data["first_name"]
                 st.session_state["email"] = user_data["email"]
                 st.session_state["username"] = username
                 st.session_state["personalized_feed"] = user_data["personalized_feed"]
+                st.session_state["interests"] = user_data["interests"]  # Correct session assignment
 
-                # Redirect to the main page
-                st.rerun()  # Forces the app to refresh and load the main page
+                st.success(f"Welcome back, {user_data['first_name']}!")
+                st.rerun()  # Reload the main page
             else:
                 st.error("Invalid username or password!")
 
@@ -293,10 +294,9 @@ def main_page():
         unsafe_allow_html=True
     )
 
-    tabs = st.tabs(["Fixtures", "Feed", "Skill Upgrades"])
+    tabs = st.tabs(["Personalized News","Feed", "Fixtures", "Skill Upgrades"])
 
     with tabs[1]:
-        st.subheader("News Feed")
 
         # Fetch all news from FastAPI
         if "all_news" not in st.session_state:
@@ -305,7 +305,6 @@ def main_page():
                 try:
                     all_news = response.json()
                     st.session_state["all_news"] = all_news  # Cache the news articles
-                    #st.write("Debug: Response from /all_news", all_news)
                     display_news(st.session_state["all_news"], "All News")
                 except Exception as e:
                     st.error(f"Error parsing news data: {e}")
@@ -313,6 +312,25 @@ def main_page():
                 st.error("Failed to fetch today's news. Please try again later.")
         else:
             display_news(st.session_state["all_news"], "All News")
+
+    with tabs[0]:
+        try:
+            # Fetch user interests from FastAPI (already in session state)
+            user_interests = st.session_state.get("interests", [])
+            #st.write("Interests in session state:", st.session_state.get("interests"))
+            if not user_interests:
+                st.warning("No interests found. Please update your profile to select interests.")
+                return
+
+            # Query Pinecone for personalized news
+            response = requests.post(f"{FASTAPI_URL}/personalized_news", json={"interests": user_interests})
+            if response.status_code == 200:
+                personalized_news = response.json()
+                display_news(personalized_news, "Personalized News")
+            else:
+                st.error("Failed to fetch personalized news. Please try again later.")
+        except Exception as e:
+            st.error(f"Error fetching personalized news: {e}")
 
 # Main navigation
 if "logged_in" in st.session_state and st.session_state["logged_in"]:
