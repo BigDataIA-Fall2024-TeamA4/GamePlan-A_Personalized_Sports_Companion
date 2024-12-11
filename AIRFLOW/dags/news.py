@@ -37,7 +37,7 @@ def classify_with_openai(title: str, description: str) -> Optional[str]:
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a sports news classifier. Classify the given sports news into one of these categories: Basketball, Cricket, Tennis, or Football. Soccer should be categorized as Football. Only return the sports category as one word. Ignore all other sports."
+                    "content": "You are a sports news classifier. Classify the given sports news into one of these categories: Basketball, Cricket, Tennis, or Football. Consider Soccer as Football. Do not classify Rugby or any other sport. Return only the sports category as a single word."
                 },
                 {
                     "role": "user",

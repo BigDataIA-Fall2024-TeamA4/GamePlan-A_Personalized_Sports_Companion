@@ -297,21 +297,37 @@ def main_page():
     tabs = st.tabs(["Personalized News","Feed", "Fixtures", "Skill Upgrades"])
 
     with tabs[1]:
-
-        # Fetch all news from FastAPI
-        if "all_news" not in st.session_state:
-            response = requests.get(f"{FASTAPI_URL}/all_news")
+        # Search input field
+        search_query = st.text_input("Search for news by title or description:", placeholder="Enter keywords or phrases...")
+    
+        if search_query:
+            # Query the FastAPI /search_news endpoint
+            response = requests.post(f"{FASTAPI_URL}/search_news", json={"query": search_query})
+        
             if response.status_code == 200:
-                try:
-                    all_news = response.json()
-                    st.session_state["all_news"] = all_news  # Cache the news articles
-                    display_news(st.session_state["all_news"], "All News")
-                except Exception as e:
-                    st.error(f"Error parsing news data: {e}")
+                search_results = response.json().get("news", [])
+                if search_results:
+                    display_news(search_results, "Search Results")
+                else:
+                    st.info("No matching news articles found.")
             else:
-                st.error("Failed to fetch today's news. Please try again later.")
+                st.error("Failed to fetch search results. Please try again later.")
         else:
-            display_news(st.session_state["all_news"], "All News")
+            # Fetch all news if no search query is provided
+            if "all_news" not in st.session_state:
+                response = requests.get(f"{FASTAPI_URL}/all_news")
+                if response.status_code == 200:
+                    try:
+                        all_news = response.json()
+                        st.session_state["all_news"] = all_news  # Cache the news articles
+                        display_news(st.session_state["all_news"], "All News")
+                    except Exception as e:
+                        st.error(f"Error parsing news data: {e}")
+                else:
+                    st.error("Failed to fetch today's news. Please try again later.")
+            else:
+                display_news(st.session_state["all_news"], "All News")
+
 
     with tabs[0]:
         try:
