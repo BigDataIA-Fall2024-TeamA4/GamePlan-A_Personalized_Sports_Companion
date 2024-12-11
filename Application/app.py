@@ -10,6 +10,8 @@ load_dotenv()
 # Fetch the FastAPI URL from environment variables
 FASTAPI_URL = os.getenv('FASTAPI_URL')
 
+st.set_page_config(layout="wide")
+
 if "interests" not in st.session_state:
     st.session_state.interests = []
 
@@ -246,34 +248,49 @@ def update_profile():
 
 def display_news(news_feed, title):
     st.subheader(title)
-    # Check if the news_feed is a dictionary
-    if isinstance(news_feed, dict):
-        news_feed = news_feed.get("news", [])  # Adjust this key based on the actual data structure
 
-    # Check if it's now a list
+    # Validate news_feed format
+    if isinstance(news_feed, dict):
+        news_feed = news_feed.get("news", [])
+
     if not isinstance(news_feed, list):
-        st.error("News feed is not in the expected format. Please check the API response.")
+        st.error("News feed is not in the expected format.")
         return
 
-    # Iterate through the list of news articles
-    for article in news_feed:
-        if isinstance(article, dict):  # Ensure each article is a dictionary
-            st.markdown(
-                f"""
-                <div style="border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin-bottom: 20px; background-color: #f9f9f9;">
-                    <img src="{article.get('image_link', '')}" alt="{article.get('title', 'Image')}" style="width:100%; border-radius: 8px;" />
-                    <div style="padding: 10px 0;">
-                        <span style="background-color: #0056b3; color: white; padding: 3px 8px; font-size: 12px; border-radius: 3px;">{article.get('category', 'Uncategorized')}</span>
-                        <h4><a href="{article.get('link', '#')}" target="_blank" style="color: #0056b3; text-decoration: none;">{article.get('title', 'Untitled')}</a></h4>
-                        <p style="color: black;">{article.get('description', 'No description available.')}</p>
-                        <small style="color: black;">Published: {article.get('published_date', 'Unknown')} | Source: {article.get('source', 'Unknown')}</small>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-        else:
-            st.warning("Invalid article format. Skipping...")
+    # Create a grid layout with 4 columns
+    num_articles = len(news_feed)
+    cols_per_row = 4
+    
+    for idx in range(0, num_articles, cols_per_row):
+        cols = st.columns(cols_per_row)
+
+        # Populate articles in each column
+        for col, article in zip(cols, news_feed[idx:idx+cols_per_row]):
+            if isinstance(article, dict):  # Ensure correct format
+                with col:
+                    st.markdown(
+                        f"""
+                        <div style="border: 1px solid #ddd; border-radius: 10px; padding: 15px; background-color: #f9f9f9; height: 450px; width: 330px; overflow: hidden; margin: 10px;">
+                            <img src="{article.get('image_link', '')}" alt="{article.get('title', 'Image')}" style="width:100%; height:200px; object-fit:cover; border-radius: 8px;" />
+                            <h4 style="margin-top:10px; height: 70px; overflow: hidden; text-overflow: ellipsis;">
+                                <a href="{article.get('link', '#')}" target="_blank" style="color: #0056b3; text-decoration: none;">
+                                    {article.get('title', 'Untitled')}
+                                </a>
+                            </h4>
+                            <p style="color: black; font-size: 14px; line-height: 1.6; height: 70px; overflow: hidden; text-overflow: ellipsis;">
+                                {article.get('description', 'No description available.')}
+                            </p>
+                            <div style="margin-top: 10px; font-size: 12px; color: #0056b3; font-weight: bold;">
+                                Category: {article.get('category', 'Uncategorized')}
+                            </div>
+                            <small style="color: gray;">
+                                Published: {article.get('published_date', 'Unknown')} | Source: {article.get('source', 'Unknown')}
+                            </small>
+                        </div>
+
+                        """,
+                        unsafe_allow_html=True
+                    )
 
 # Main page after login
 def main_page():

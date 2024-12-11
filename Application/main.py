@@ -301,14 +301,17 @@ async def get_personalized_news(data: dict):
                     continue  # Skip duplicate entries
                 seen_ids.add(base_link)  # Add to the seen set
 
+                default_image = "https://media.istockphoto.com/id/1396814518/vector/image-coming-soon-no-photo-no-thumbnail-image-available-vector-illustration.jpg?s=612x612&w=0&k=20&c=hnh2OZgQGhf0b46-J2z7aHbIWwq8HNlSDaNp2wn_iko="
+        
                 if {"title", "description", "category"} <= metadata.keys():
                     news_feed.append({
                         "title": metadata["title"],
                         "description": metadata["description"],
                         "link": base_link,
-                        "image_link": metadata.get("image_link", ""),
+                        "image_link": metadata.get("image_link", "") or default_image,
                         "category": metadata["category"],
                         "published_date": metadata.get("published_date", "Unknown"),
+                        "source": metadata.get("source", "Unknown"),
                     })
 
         # Sort by timestamp (if required) and return top results
@@ -348,14 +351,17 @@ async def search_news(data: dict):
                 continue  # Skip duplicates
             seen_ids.add(base_link)
 
+            default_image = "https://media.istockphoto.com/id/1396814518/vector/image-coming-soon-no-photo-no-thumbnail-image-available-vector-illustration.jpg?s=612x612&w=0&k=20&c=hnh2OZgQGhf0b46-J2z7aHbIWwq8HNlSDaNp2wn_iko="
+        
             # Return metadata from Pinecone results
             news_feed.append({
                 "title": metadata.get("title", "Unknown Title"),
                 "description": metadata.get("description", "No Description Available."),
                 "link": base_link,
-                "image_link": metadata.get("image_link", ""),
+                "image_link": metadata.get("image_link", "") or default_image,
                 "category": metadata.get("category", "Uncategorized"),
                 "published_date": metadata.get("published_date", "Unknown"),
+                "source": metadata.get("source", "Unknown"),
             })
 
         return {"news": news_feed}
@@ -385,14 +391,17 @@ async def get_all_news():
                 continue  # Skip duplicate entries
             seen_ids.add(base_link)  # Add to the seen set
 
+            default_image = "https://media.istockphoto.com/id/1396814518/vector/image-coming-soon-no-photo-no-thumbnail-image-available-vector-illustration.jpg?s=612x612&w=0&k=20&c=hnh2OZgQGhf0b46-J2z7aHbIWwq8HNlSDaNp2wn_iko="
+        
             if {"title", "description", "category"} <= metadata.keys():
                 news_feed.append({
                     "title": metadata["title"],
                     "description": metadata["description"],
                     "link": base_link,
-                    "image_link": metadata.get("image_link", ""),
+                    "image_link": metadata.get("image_link", "") or default_image,
                     "category": metadata["category"],
                     "published_date": metadata.get("published_date", "Unknown"),
+                    "source": metadata.get("source", "Unknown"),
                 })
 
         # Return results
