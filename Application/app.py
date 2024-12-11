@@ -91,7 +91,6 @@ def sign_up():
                     st.error("Username already exists!")
 
 # Function for login
-# Correct handling in Streamlit
 def login():
     with st.form(key="login_form"):
         st.subheader("Login")
@@ -161,11 +160,23 @@ def update_expertise(username, expertise_level):
     if response.status_code != 200:
         st.sidebar.error("Failed to update expertise level. Please try again.")
 
+def logout():
+    st.session_state.clear()  
+    st.rerun() 
+
 def update_profile():
     st.sidebar.subheader("Update Profile")
     
+    if st.sidebar.button("Logout"):
+        logout()
+        
     # Display email (non-editable)
-    st.sidebar.text(f"Email: {st.session_state['email']}")
+    st.sidebar.text(f"Email: {st.session_state.get('email', 'N/A')}")
+
+    # Initialize default session state variables if not present
+    st.session_state.setdefault("password", "")
+    st.session_state.setdefault("interests", [])
+    st.session_state.setdefault("expertise_level", "Beginner")
     
     # Update password
     new_password = st.sidebar.text_input("New Password", type="password")
@@ -175,7 +186,7 @@ def update_profile():
     interests = st.sidebar.multiselect(
         'Update Interests',
         options=["Basketball", "Cricket", "Tennis", "Football"],
-        default=st.session_state.interests,
+        default=st.session_state["interests"],
         help="Select one or more sports interests!"
     )
     
@@ -183,7 +194,7 @@ def update_profile():
     expertise_level = st.sidebar.select_slider(
         'Update Expertise Level',
         options=["Beginner", "Intermediate", "Advanced", "Professional"],
-        value=st.session_state.expertise_level,
+        value=st.session_state["expertise_level"],
         help="Select your expertise level."
     )
     
@@ -191,10 +202,10 @@ def update_profile():
         password_updated = False
         interests_updated = False
         expertise_updated = False
-        
+
         # Handle password update if new password is entered
         if new_password:
-            if new_password == st.session_state['password']:
+            if new_password == st.session_state["password"]:
                 st.sidebar.error("New password must be different from the current password.")
             elif new_password != confirm_password:
                 st.sidebar.error("New password and confirmation do not match.")
@@ -204,47 +215,44 @@ def update_profile():
                       len(new_password) >= 8):
                 st.sidebar.error("Password should contain at least 1 uppercase letter, 1 special character, 1 numerical character, and be at least 8 characters long!")
             else:
-                update_password(st.session_state['username'], new_password)
-                st.session_state['password'] = new_password
+                update_password(st.session_state["username"], new_password)
+                st.session_state["password"] = new_password
                 password_updated = True
 
         # Handle interests update if interests have changed
-        current_interests = set(st.session_state['interests'] if isinstance(st.session_state['interests'], list) else json.loads(st.session_state['interests']))
+        current_interests = set(st.session_state["interests"])
         new_interests = set(interests)
         if current_interests != new_interests:
             interests_json = json.dumps(list(new_interests))
-            update_interests(st.session_state['username'], interests_json)
-            st.session_state['interests'] = interests_json  # Store as JSON string
+            update_interests(st.session_state["username"], interests_json)
+            st.session_state["interests"] = list(new_interests)
             interests_updated = True
-            # Refresh the feed after updating interests
-            login_response = requests.post(f"{FASTAPI_URL}/login", 
-                                           json={"username": st.session_state['username'], 
-                                                 "password": st.session_state['password']})
-            if login_response.status_code == 200:
-                st.session_state["personalized_feed"] = login_response.json()["personalized_feed"]
-                st.rerun()
             
+            # Call the personalized news function to refresh the news feed
+            response = requests.post(f"{FASTAPI_URL}/personalized_news", json={"interests": list(new_interests)})
+            if response.status_code == 200:
+                st.session_state["personalized_feed"] = response.json().get("news", [])
+                st.sidebar.success("Interests updated and personalized news refreshed!")
+            else:
+                st.sidebar.error("Failed to refresh personalized news.")
+
         # Handle expertise level update if changed
-        if expertise_level != st.session_state['expertise_level']:
-            update_expertise(st.session_state['username'], expertise_level)
-            st.session_state['expertise_level'] = expertise_level
+        if expertise_level != st.session_state["expertise_level"]:
+            update_expertise(st.session_state["username"], expertise_level)
+            st.session_state["expertise_level"] = expertise_level
             expertise_updated = True
         
         # Show success messages based on what was updated
-        if password_updated and interests_updated and expertise_updated:
-            st.sidebar.success("Profile updated successfully!")
-        elif password_updated and interests_updated:
-            st.sidebar.success("Password and interests updated successfully!")
-        elif password_updated and expertise_updated:
-            st.sidebar.success("Password and expertise level updated successfully!")
-        elif interests_updated and expertise_updated:
-            st.sidebar.success("Interests and expertise level updated successfully!")
-        elif password_updated:
+        if password_updated:
             st.sidebar.success("Password updated successfully!")
-        elif interests_updated:
+        if interests_updated:
             st.sidebar.success("Interests updated successfully!")
-        elif expertise_updated:
+        if expertise_updated:
             st.sidebar.success("Expertise level updated successfully!")
+
+        if not (password_updated or interests_updated or expertise_updated):
+            st.sidebar.warning("No changes were made.")
+
 
 def display_news(news_feed, title):
     st.subheader(title)
@@ -298,6 +306,60 @@ def main_page():
         st.title("GamePlan: Personalized Sports News")
         login()
         return
+    
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebar"] {
+            background-color: #f9f9f9 !important;
+        }
+    
+        /* General text elements */
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p, 
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] span,
+        [data-testid="stSidebar"] .stTextInput label,
+        [data-testid="stSidebar"] h1,
+        [data-testid="stSidebar"] h2,
+        [data-testid="stSidebar"] h3,
+        [data-testid="stSidebar"] .stSlider label,
+        [data-testid="stSidebar"] .stSlider p {
+            color: black !important;
+        }
+    
+        /* Input fields */
+        [data-testid="stSidebar"] input,
+        [data-testid="stSidebar"] .stTextInput input[type="text"],
+        [data-testid="stSidebar"] .stTextInput input[type="email"] {
+            color: black !important;
+            background-color: white !important;
+        }
+    
+        /* Slider specific styles */
+        [data-testid="stSidebar"] .stSlider [data-testid="stThumbValue"] {
+            color: black !important;
+        }
+    
+        [data-testid="stSidebar"] .stSlider [data-baseweb="slider"] div {
+            color: black !important;
+        }
+    
+        /* Email field highlight */
+        [data-testid="stSidebar"] .stTextInput input {
+            border: 2px solid #4CAF50 !important;
+            border-radius: 4px !important;
+            padding: 4px 8px !important;
+        }
+    
+        /* Ensure all text elements in sidebar are black */
+        [data-testid="stSidebar"] * {
+            color: black !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+        )
+
+    update_profile()
 
     st.markdown(
         """
