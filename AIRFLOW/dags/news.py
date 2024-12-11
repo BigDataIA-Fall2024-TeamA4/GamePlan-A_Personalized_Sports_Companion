@@ -30,41 +30,38 @@ RSS_SOURCES = {
     'Bleacher Report': 'https://bleacherreport.com/articles/feed'
 }
 
-# Keywords for categories
-CATEGORY_KEYWORDS = {
-    'Basketball': ['NBA', 'NCAA', 'WNBA', 'EuroLeague', 'FIBA Basketball World Cup', 'basketball', 'NBA'],
-    'Cricket': ['IPL', 'T20 World Cup', 'ODI World Cup', 'ODI', 'T20', 'Ashes Series', 'Big Bash League', 'cricket'],
-    'Tennis': ['Wimbledon', 'US Open', 'Australian Open', 'Roland Garros', 'ATP Finals', 'Davis Cup', 'Laver Cup', 'tennis'],
-    'Football': ['Soccer', 'NFL', 'Premier League', 'UEFA Champions League', 'FIFA World Cup', 'La Liga', 'Serie A', 'Bundesliga', 'MLS', 'Fantasy football', 'football']
-}
-
-def classify_with_openai(title: str) -> Optional[str]:
+def classify_with_openai(title: str, description: str) -> Optional[str]:
     try:
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are a sports news classifier. Classify the given title into one of these categories: Basketball, Cricket, Tennis, or Football. Respond with just the category name."},
-                {"role": "user", "content": f"Classify this sports news title: {title}"}
+                {
+                    "role": "system",
+                    "content": "You are a sports news classifier. Classify the given sports news into one of these categories: Basketball, Cricket, Tennis, or Football. Soccer should be categorized as Football. Only return the sports category as one word. Ignore all other sports."
+                },
+                {
+                    "role": "user",
+                    "content": f"Classify this sports news: Title: {title}, Description: {description}"
+                }
             ],
             max_tokens=10
         )
+        
         category = response.choices[0].message['content'].strip()
-        if category in CATEGORY_KEYWORDS:
+        
+        # Validate the returned category
+        if category in ["Basketball", "Cricket", "Tennis", "Football"]:
             return category
-        return None
+        return None  # Ignore unrelated sports
+        
     except Exception as e:
         print(f"Error classifying with OpenAI: {str(e)}")
         return None
 
-def extract_category(title: str, description: str, link: str) -> Optional[str]:
+def extract_category(title: str, description: str) -> Optional[str]:
     try:
-        combined_text = f"{title} {description} {link}".lower()
-        for category, keywords in CATEGORY_KEYWORDS.items():
-            if any(keyword.lower() in combined_text for keyword in keywords):
-                return category
-        
-        # If no category found, use OpenAI
-        return classify_with_openai(title)
+        # Use both the title and description for classification
+        return classify_with_openai(title, description)
     except Exception as e:
         print(f"Error extracting category: {str(e)}")
         return None
@@ -83,7 +80,7 @@ def fetch_and_process_feeds(**kwargs) -> None:
                 pub_date = item.find('pubDate').text if item.find('pubDate') else ''
 
                 # Extract category
-                category = extract_category(title, description, link)
+                category = extract_category(title, description)
                 if not category:
                     continue  # Skip if no relevant category found
 
@@ -210,8 +207,8 @@ def create_embeddings(**kwargs) -> Optional[List[str]]:
                     "timestamp": article['timestamp']
                 }
 
-                clean_metadata = clean_metadata(metadata)
-                
+                cleaned_data = clean_metadata(metadata)
+
                 # Create embeddings
                 category_embedding = model.encode(article['category'])
                 title_embedding = model.encode(article['title'])
@@ -220,9 +217,9 @@ def create_embeddings(**kwargs) -> Optional[List[str]]:
                 # Upsert embeddings into Pinecone
                 index.upsert(
                     vectors=[
-                        (f"{article['link']}_category", category_embedding.tolist(), {**metadata, "type": "category"}),
-                        (f"{article['link']}_title", title_embedding.tolist(), {**metadata, "type": "title"}),
-                        (f"{article['link']}_description", description_embedding.tolist(), {**metadata, "type": "description"}),
+                        (f"{article['link']}_category", category_embedding.tolist(), {**cleaned_data, "type": "category"}),
+                        (f"{article['link']}_title", title_embedding.tolist(), {**cleaned_data, "type": "title"}),
+                        (f"{article['link']}_description", description_embedding.tolist(), {**cleaned_data, "type": "description"}),
                     ]
                 )
  
