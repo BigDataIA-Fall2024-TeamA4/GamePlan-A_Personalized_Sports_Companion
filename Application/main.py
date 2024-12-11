@@ -274,84 +274,131 @@ def query_pinecone_latest_news(user_interests, hours_back=24):
 
     return news_feed
 
-@app.get("/all_news")
-def get_all_news():
-    try:
-        response = index.query(
-            vector=[0] * 384,  # Dummy vector
-            top_k=50,  # Adjust this as needed
-            include_metadata=True
-        )
-        news_feed = {}
-        
-        for match in response["matches"]:
-            metadata = match["metadata"]
-            # Extract the link without the suffix (_category, _title, _description)
-            original_link = match["id"].split("_")[0]
-            
-            # Deduplicate based on the original link
-            if original_link not in news_feed:
-                news_feed[original_link] = {
-                    "title": metadata["title"],
-                    "description": metadata["description"],
-                    "link": original_link,  # Use the deduplicated link
-                    "image_link": metadata.get("image_link", ""),
-                    "category": metadata["category"],
-                    "timestamp": metadata["timestamp"],
-                    "source": metadata.get("source", "Unknown"),
-                    "published_date": metadata.get("published_date", "Unknown")
-                }
-        
-        # Return deduplicated list
-        return {"news": list(news_feed.values())}
-    except Exception as e:
-        return {"error": str(e)}
-
 @app.post("/personalized_news")
 async def get_personalized_news(data: dict):
     try:
         user_interests = data.get("interests", [])
-        print("Received interests:", user_interests)  # Debug log
         if not user_interests:
             return {"news": []}
 
         news_feed = []
+        seen_ids = set()  # Set to track unique base IDs
 
         for interest in user_interests:
-            print(f"Fetching news for interest: {interest}")  # Debug log
             query_embedding = model.encode(interest).tolist()
             search_results = index.query(
                 vector=query_embedding,
-                top_k=15,  
+                top_k=15,  # Fetch more results for deduplication
                 include_metadata=True,
                 filter={"type": {"$eq": "category"}}
             )
-            #print(f"Search results for {interest}: {search_results}")  # Debug log
 
             for result in search_results.get("matches", []):
                 metadata = result.get("metadata", {})
-                if {"title", "description", "category"} <= metadata.keys():
-                    # Extract the base link by removing suffixes
-                    base_link = result["id"].split("_")[0]
+                base_link = result["id"].split("_")[0]  # Extract base ID
 
+                if base_link in seen_ids:
+                    continue  # Skip duplicate entries
+                seen_ids.add(base_link)  # Add to the seen set
+
+                if {"title", "description", "category"} <= metadata.keys():
                     news_feed.append({
                         "title": metadata["title"],
                         "description": metadata["description"],
-                        "link": base_link, 
+                        "link": base_link,
                         "image_link": metadata.get("image_link", ""),
                         "category": metadata["category"],
                         "published_date": metadata.get("published_date", "Unknown"),
-                        "timestamp": metadata.get("timestamp", "1970-01-01T00:00:00Z"),  
                     })
 
-        # Sort the news feed by timestamp (latest first)
-        news_feed.sort(key=lambda x: x["timestamp"], reverse=True)
-
-        # Return the top 10 latest news items
-        return {"news": news_feed[:10]}
+        # Sort by timestamp (if required) and return top results
+        news_feed.sort(key=lambda x: x.get("published_date", ""), reverse=True)
+        return {"news": news_feed[:10]}  # Limit to top 10
 
     except Exception as e:
-        #print(f"Error in personalized_news: {e}")  # Debug log
+        raise HTTPException(status_code=500, detail=f"Error: {e}")
+
+
+@app.post("/search_news")
+async def search_news(data: dict):
+    try:
+        query = data.get("query", "")
+        if not query:
+            return {"news": []}
+
+        # Generate the query embedding using the same model
+        query_embedding = model.encode(query).tolist()
+
+        # Query Pinecone for semantic matches
+        search_results = index.query(
+            vector=query_embedding,
+            top_k=1,  # Fetch more results for better coverage
+            include_metadata=True
+        )
+
+        news_feed = []
+        seen_ids = set()  # Deduplication tracking
+
+        # Process search results based on semantic similarity
+        for result in search_results.get("matches", []):
+            metadata = result.get("metadata", {})
+            base_link = result["id"].split("_")[0]  # Extract base ID
+
+            if base_link in seen_ids:
+                continue  # Skip duplicates
+            seen_ids.add(base_link)
+
+            # Return metadata from Pinecone results
+            news_feed.append({
+                "title": metadata.get("title", "Unknown Title"),
+                "description": metadata.get("description", "No Description Available."),
+                "link": base_link,
+                "image_link": metadata.get("image_link", ""),
+                "category": metadata.get("category", "Uncategorized"),
+                "published_date": metadata.get("published_date", "Unknown"),
+            })
+
+        return {"news": news_feed}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {e}")
+
+
+@app.get("/all_news")
+async def get_all_news():
+    try:
+        # Fetch a large number of results to allow deduplication
+        search_results = index.query(
+            vector=[0] * 384,  # Dummy vector
+            top_k=100,  # Fetch more results for deduplication
+            include_metadata=True
+        )
+
+        news_feed = []
+        seen_ids = set()  # Set to track unique base IDs
+
+        for result in search_results.get("matches", []):
+            metadata = result.get("metadata", {})
+            base_link = result["id"].split("_")[0]  # Extract base ID
+
+            if base_link in seen_ids:
+                continue  # Skip duplicate entries
+            seen_ids.add(base_link)  # Add to the seen set
+
+            if {"title", "description", "category"} <= metadata.keys():
+                news_feed.append({
+                    "title": metadata["title"],
+                    "description": metadata["description"],
+                    "link": base_link,
+                    "image_link": metadata.get("image_link", ""),
+                    "category": metadata["category"],
+                    "published_date": metadata.get("published_date", "Unknown"),
+                })
+
+        # Return results
+        return {"news": news_feed}
+
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {e}")
      
 # Example protected endpoint
