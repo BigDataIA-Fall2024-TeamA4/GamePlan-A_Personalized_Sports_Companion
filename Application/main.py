@@ -10,6 +10,7 @@ from fastapi.responses import Response
 from pinecone import Pinecone
 from sentence_transformers import SentenceTransformer
 import time
+import json
 
 load_dotenv()
 
@@ -31,7 +32,7 @@ PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 PINECONE_ENVIRONMENT = os.getenv("PINECONE_ENVIRONMENT")
 
 pc = Pinecone(api_key=PINECONE_API_KEY)
-index = pc.Index('sports-news')
+index = pc.Index('sport-news')
 model = SentenceTransformer("BAAI/bge-small-en-v1.5")
 
 # Snowflake connection
@@ -131,37 +132,40 @@ async def register_user(user: User):
 @app.post("/login")
 async def login_user(user: UserLogin):
     try:
-        # Connect to Snowflake
         conn = get_snowflake_connection()
         cursor = conn.cursor()
 
         # Check username and password
-        cursor.execute(
-            f"SELECT FIRST_NAME, EMAIL, INTERESTS FROM USERS WHERE USERNAME = '{user.username}' AND PASSWORD = '{user.password}'"
-        )
+        query = f"""
+        SELECT FIRST_NAME, EMAIL, INTERESTS 
+        FROM USERS 
+        WHERE USERNAME = '{user.username}' AND PASSWORD = '{user.password}'
+        """
+        cursor.execute(query)
         result = cursor.fetchone()
+
         cursor.close()
         conn.close()
 
         if not result:
             raise HTTPException(status_code=400, detail="Invalid credentials!")
 
-        # Fetch user interests
-        user_interests = fetch_user_interests(user.username)
+        # Decode interests from Snowflake's JSON storage
+        user_interests = json.loads(result[2]) if result[2] else []
 
-        # Fetch latest news from Pinecone
+        # Fetch personalized feed from Pinecone
         personalized_feed = query_pinecone_latest_news(user_interests)
 
+        # Return user data and personalized feed
         return {
             "first_name": result[0],
             "email": result[1],
-            "interests": result[2],
+            "interests": user_interests,
             "personalized_feed": personalized_feed,
         }
 
     except Exception as e:
-        #print(f"Error in /login endpoint: {e}")  # Log the error to the console
-        raise HTTPException(status_code=500, detail="Internal Server Error")
+        raise HTTPException(status_code=500, detail=f"Error: {e}")
 
 @app.put("/update_password")
 async def update_user_password(data: dict):
@@ -275,7 +279,7 @@ def get_all_news():
     try:
         response = index.query(
             vector=[0] * 384,  # Dummy vector
-            top_k=100,  # Adjust this as needed
+            top_k=50,  # Adjust this as needed
             include_metadata=True
         )
         news_feed = {}
@@ -303,7 +307,53 @@ def get_all_news():
     except Exception as e:
         return {"error": str(e)}
 
-                    
+@app.post("/personalized_news")
+async def get_personalized_news(data: dict):
+    try:
+        user_interests = data.get("interests", [])
+        print("Received interests:", user_interests)  # Debug log
+        if not user_interests:
+            return {"news": []}
+
+        news_feed = []
+
+        for interest in user_interests:
+            print(f"Fetching news for interest: {interest}")  # Debug log
+            query_embedding = model.encode(interest).tolist()
+            search_results = index.query(
+                vector=query_embedding,
+                top_k=15,  
+                include_metadata=True,
+                filter={"type": {"$eq": "category"}}
+            )
+            #print(f"Search results for {interest}: {search_results}")  # Debug log
+
+            for result in search_results.get("matches", []):
+                metadata = result.get("metadata", {})
+                if {"title", "description", "category"} <= metadata.keys():
+                    # Extract the base link by removing suffixes
+                    base_link = result["id"].split("_")[0]
+
+                    news_feed.append({
+                        "title": metadata["title"],
+                        "description": metadata["description"],
+                        "link": base_link, 
+                        "image_link": metadata.get("image_link", ""),
+                        "category": metadata["category"],
+                        "published_date": metadata.get("published_date", "Unknown"),
+                        "timestamp": metadata.get("timestamp", "1970-01-01T00:00:00Z"),  
+                    })
+
+        # Sort the news feed by timestamp (latest first)
+        news_feed.sort(key=lambda x: x["timestamp"], reverse=True)
+
+        # Return the top 10 latest news items
+        return {"news": news_feed[:10]}
+
+    except Exception as e:
+        #print(f"Error in personalized_news: {e}")  # Debug log
+        raise HTTPException(status_code=500, detail=f"Error: {e}")
+     
 # Example protected endpoint
 @app.get("/protected-endpoint")
 async def protected_endpoint(token: str = Depends(oauth2_scheme)):
