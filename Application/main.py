@@ -11,6 +11,10 @@ from pinecone import Pinecone
 from sentence_transformers import SentenceTransformer
 import time
 import json
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import requests
 
 load_dotenv()
 
@@ -81,7 +85,37 @@ class UserLogin(BaseModel):
     username: str
     password: str
 
+class ForgotPasswordRequest(BaseModel):
+    email: str
 
+class PasswordReset(BaseModel):
+    token: str
+    new_password: str
+
+# Send Reset Email Function
+def send_reset_email(email, reset_link):
+    try:
+        # Email message
+        message = MIMEMultipart("alternative")
+        message["Subject"] = "Password Reset Request"
+        message["From"] = EMAIL_USER
+        message["To"] = email
+
+        text = f"Please click the link below to reset your password:\n{reset_link}"
+        html = f"<p>Please click the link below to reset your password:</p><a href='{reset_link}'>{reset_link}</a>"
+        message.attach(MIMEText(text, "plain"))
+        message.attach(MIMEText(html, "html"))
+
+        # Send email
+        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
+            server.login(EMAIL_USER, EMAIL_PASSWORD)
+            server.sendmail(EMAIL_USER, email, message.as_string())
+
+        return True
+    except Exception as e:
+        print(f"Failed to send email: {e}")
+        return False
+        
 def fetch_user_interests(username):
     conn = get_snowflake_connection()
     cursor = conn.cursor()
@@ -298,10 +332,10 @@ async def get_personalized_news(data: dict):
                 base_link = result["id"].split("_")[0]  # Extract base ID
 
                 if base_link in seen_ids:
-                    continue  # Skip duplicate entries
-                seen_ids.add(base_link)  # Add to the seen set
+                    continue  
+                seen_ids.add(base_link)  
 
-                default_image = "https://media.istockphoto.com/id/1396814518/vector/image-coming-soon-no-photo-no-thumbnail-image-available-vector-illustration.jpg?s=612x612&w=0&k=20&c=hnh2OZgQGhf0b46-J2z7aHbIWwq8HNlSDaNp2wn_iko="
+                default_image = "https://img.freepik.com/premium-vector/unavailable-movie-icon-no-video-bad-record-symbol_883533-383.jpg?w=360"
         
                 if {"title", "description", "category"} <= metadata.keys():
                     news_feed.append({
@@ -314,7 +348,7 @@ async def get_personalized_news(data: dict):
                         "source": metadata.get("source", "Unknown"),
                     })
 
-        # Sort by timestamp (if required) and return top results
+        
         news_feed.sort(key=lambda x: x.get("published_date", ""), reverse=True)
         return {"news": news_feed[:10]}  # Limit to top 10
 
@@ -327,23 +361,21 @@ async def search_news(data: dict):
     try:
         query = data.get("query", "")
         if not query:
-            return {"news": []}
+            return {"rag_results": [], "web_results": []}
 
-        # Generate the query embedding using the same model
+        # Query Pinecone (RAG)
         query_embedding = model.encode(query).tolist()
-
-        # Query Pinecone for semantic matches
-        search_results = index.query(
+        pinecone_results = index.query(
             vector=query_embedding,
-            top_k=1,  # Fetch more results for better coverage
+            top_k=5,  # Fetch max 5 results from Pinecone
             include_metadata=True
         )
 
-        news_feed = []
-        seen_ids = set()  # Deduplication tracking
+        # Process Pinecone results
+        rag_results = []
+        seen_ids = set()
 
-        # Process search results based on semantic similarity
-        for result in search_results.get("matches", []):
+        for result in pinecone_results.get("matches", []):
             metadata = result.get("metadata", {})
             base_link = result["id"].split("_")[0]  # Extract base ID
 
@@ -351,20 +383,50 @@ async def search_news(data: dict):
                 continue  # Skip duplicates
             seen_ids.add(base_link)
 
-            #default_image = "https://media.istockphoto.com/id/1396814518/vector/image-coming-soon-no-photo-no-thumbnail-image-available-vector-illustration.jpg?s=612x612&w=0&k=20&c=hnh2OZgQGhf0b46-J2z7aHbIWwq8HNlSDaNp2wn_iko="
-            default_image="https://img.freepik.com/premium-vector/unavailable-movie-icon-no-video-bad-record-symbol_883533-383.jpg?w=360"
-            # Return metadata from Pinecone results
-            news_feed.append({
+            rag_results.append({
                 "title": metadata.get("title", "Unknown Title"),
                 "description": metadata.get("description", "No Description Available."),
                 "link": base_link,
-                "image_link": metadata.get("image_link", "") or default_image,
+                "image_link": metadata.get("image_link", "https://img.freepik.com/premium-vector/unavailable-movie-icon-no-video-bad-record-symbol_883533-383.jpg?w=360"),
                 "category": metadata.get("category", "Uncategorized"),
                 "published_date": metadata.get("published_date", "Unknown"),
                 "source": metadata.get("source", "Unknown"),
             })
 
-        return {"news": news_feed}
+        # Query SERP API (Web Search)
+        serp_api_url = f"https://serpapi.com/search"
+        params = {
+            "engine": "google",
+            "q": query,
+            "api_key": os.getenv("SERP_API_KEY"),
+            "gl": "us",
+            "hl": "en"
+        }
+        serp_response = requests.get(serp_api_url, params=params)
+        serp_results = serp_response.json().get("organic_results", [])
+        
+        web_results = []
+        for result in serp_results:
+            # Extract relevant fields based on the typical SERP API response format
+            link = result.get("link", "")
+            title = result.get("title", "Unknown Title")
+            description = result.get("snippet", "No Description Available.")
+            thumbnail = result.get("thumbnail", "https://img.freepik.com/premium-vector/unavailable-movie-icon-no-video-bad-record-symbol_883533-383.jpg?w=360")
+
+            if link and link not in seen_ids:  # Avoid duplicate results
+                web_results.append({
+                    "title": title,
+                    "description": description,
+                    "link": link,
+                    "image_link": thumbnail,
+                    "category": "Web Search",
+                    "published_date": "Unknown",
+                    "source": "Google Search",
+                })
+                seen_ids.add(link)
+
+        # Return combined results
+        return {"rag_results": rag_results, "web_results": web_results}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {e}")
@@ -391,7 +453,7 @@ async def get_all_news():
                 continue  # Skip duplicate entries
             seen_ids.add(base_link)  # Add to the seen set
 
-            default_image = "https://media.istockphoto.com/id/1396814518/vector/image-coming-soon-no-photo-no-thumbnail-image-available-vector-illustration.jpg?s=612x612&w=0&k=20&c=hnh2OZgQGhf0b46-J2z7aHbIWwq8HNlSDaNp2wn_iko="
+            default_image = "https://img.freepik.com/premium-vector/unavailable-movie-icon-no-video-bad-record-symbol_883533-383.jpg?w=360"
         
             if {"title", "description", "category"} <= metadata.keys():
                 news_feed.append({
@@ -409,7 +471,63 @@ async def get_all_news():
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {e}")
-     
+
+@app.post("/forgot_password")
+async def forgot_password(request: ForgotPasswordRequest):
+    email = request.email
+
+    # Log email received
+    print(f"Received email for password reset: {email}")
+
+    # Check if email exists in Snowflake
+    conn = get_snowflake_connection()
+    cursor = conn.cursor()
+    cursor.execute(f"SELECT USERNAME FROM USERS WHERE EMAIL = '{email}'")
+    result = cursor.fetchone()
+
+    if not result:
+        raise HTTPException(status_code=404, detail="Email not found")
+        
+
+    username = result[0]
+
+    # Generate reset token
+    reset_token = jwt.encode({"sub": username, "exp": datetime.utcnow() + timedelta(hours=1)}, SECRET_KEY, algorithm=ALGORITHM)
+
+    # Generate reset link
+    reset_link = f"http://localhost:8501/reset_password?token={reset_token}"
+
+    # Send email and handle responses
+    if send_reset_email(email, reset_link):
+        return {"message": "Password reset email sent successfully."}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to send reset email.")
+
+# Endpoint: Reset Password
+@app.post("/reset_password")
+async def reset_password(data: PasswordReset):
+    try:
+        # Decode token
+        payload = jwt.decode(data.token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+
+        if not username:
+            raise HTTPException(status_code=400, detail="Invalid token")
+
+        # Update password in Snowflake
+        conn = get_snowflake_connection()
+        cursor = conn.cursor()
+        cursor.execute(f"UPDATE USERS SET PASSWORD = '{data.new_password}' WHERE USERNAME = '{username}'")
+        conn.commit()
+
+        return {"message": "Password reset successfully."}
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=400, detail="Reset token has expired.")
+    except JWTError:
+        raise HTTPException(status_code=400, detail="Invalid token.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An error occurred: {e}")
+         
 # Example protected endpoint
 @app.get("/protected-endpoint")
 async def protected_endpoint(token: str = Depends(oauth2_scheme)):
