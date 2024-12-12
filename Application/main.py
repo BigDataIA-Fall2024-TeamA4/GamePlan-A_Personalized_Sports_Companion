@@ -15,6 +15,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import requests
+from fastapi import Query
 
 load_dotenv()
 
@@ -115,16 +116,7 @@ def send_reset_email(email, reset_link):
     except Exception as e:
         print(f"Failed to send email: {e}")
         return False
-        
-def fetch_user_interests(username):
-    conn = get_snowflake_connection()
-    cursor = conn.cursor()
-    cursor.execute(f"SELECT INTERESTS FROM USERS WHERE USERNAME = '{username}'")
-    result = cursor.fetchone()
-    conn.close()
-    #print(f"Fetched Interests for {username}: {result}")
-    return result[0] if result else []
-
+       
 
 # Endpoint for user registration
 @app.post("/register")
@@ -261,27 +253,23 @@ async def update_user_expertise(data: dict):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error: {str(e)}")
 
-# Query Pinecone for latest news based on interests
 def query_pinecone_latest_news(user_interests, hours_back=24):
     news_feed = []
 
-    # Calculate the latest time filter in epoch seconds
     latest_time_filter = datetime.utcnow() - timedelta(hours=hours_back)
-    latest_time_epoch = int(latest_time_filter.timestamp())  # Convert to epoch time
-
+    latest_time_epoch = int(latest_time_filter.timestamp())  
     for interest in user_interests:
-        # Encode interest as a query vector
+        
         query_embedding = model.encode(interest).tolist()
 
         try:
-            # Search only category embeddings using metadata filtering
             search_results = index.query(
-                vector=query_embedding,             # Encoded interest vector
-                top_k=5,                           # Number of results
-                include_metadata=True,             # Include metadata
+                vector=query_embedding,             
+                top_k=5,                           
+                include_metadata=True,             
                 filter={
-                    "type": {"$eq": "category"},   # Ensure only category embeddings are matched
-                    "timestamp": {"$gte": latest_time_epoch}  # Filter by recent timestamps
+                    "type": {"$eq": "category"},   
+                    "timestamp": {"$gte": latest_time_epoch}  
                 }
             )
 
@@ -289,7 +277,7 @@ def query_pinecone_latest_news(user_interests, hours_back=24):
             for result in search_results["matches"]:
                 metadata = result["metadata"]
 
-                # Add to feed only if essential fields exist
+                
                 if {"title", "description", "link", "category", "timestamp"} <= metadata.keys():
                     news_feed.append({
                         "title": metadata["title"],
@@ -303,7 +291,7 @@ def query_pinecone_latest_news(user_interests, hours_back=24):
         except Exception as e:
             print(f"Error querying Pinecone for {interest}: {str(e)}")
 
-    # Sort results by timestamp (most recent first)
+    # Sort results by timestamp
     news_feed.sort(key=lambda x: x["timestamp"], reverse=True)
 
     return news_feed
@@ -316,20 +304,20 @@ async def get_personalized_news(data: dict):
             return {"news": []}
 
         news_feed = []
-        seen_ids = set()  # Set to track unique base IDs
+        seen_ids = set()  
 
         for interest in user_interests:
             query_embedding = model.encode(interest).tolist()
             search_results = index.query(
                 vector=query_embedding,
-                top_k=15,  # Fetch more results for deduplication
+                top_k=5,  
                 include_metadata=True,
                 filter={"type": {"$eq": "category"}}
             )
 
             for result in search_results.get("matches", []):
                 metadata = result.get("metadata", {})
-                base_link = result["id"].split("_")[0]  # Extract base ID
+                base_link = result["id"].split("_")[0]  
 
                 if base_link in seen_ids:
                     continue  
@@ -359,7 +347,7 @@ async def get_personalized_news(data: dict):
 @app.post("/search_news")
 async def search_news(data: dict):
     try:
-        query = data.get("query", "")
+        query = data.get("query", "").lower()
         if not query:
             return {"rag_results": [], "web_results": []}
 
@@ -367,7 +355,7 @@ async def search_news(data: dict):
         query_embedding = model.encode(query).tolist()
         pinecone_results = index.query(
             vector=query_embedding,
-            top_k=5,  # Fetch max 5 results from Pinecone
+            top_k=3,  
             include_metadata=True
         )
 
@@ -393,8 +381,11 @@ async def search_news(data: dict):
                 "source": metadata.get("source", "Unknown"),
             })
 
+        if "sports" not in query:
+            query += " sports"
+
         # Query SERP API (Web Search)
-        serp_api_url = f"https://serpapi.com/search"
+        serp_api_url = "https://serpapi.com/search.json"
         params = {
             "engine": "google",
             "q": query,
@@ -403,25 +394,32 @@ async def search_news(data: dict):
             "hl": "en"
         }
         serp_response = requests.get(serp_api_url, params=params)
-        serp_results = serp_response.json().get("organic_results", [])
-        
-        web_results = []
-        for result in serp_results:
-            # Extract relevant fields based on the typical SERP API response format
-            link = result.get("link", "")
-            title = result.get("title", "Unknown Title")
-            description = result.get("snippet", "No Description Available.")
-            thumbnail = result.get("thumbnail", "https://img.freepik.com/premium-vector/unavailable-movie-icon-no-video-bad-record-symbol_883533-383.jpg?w=360")
+        serp_results = serp_response.json()
 
-            if link and link not in seen_ids:  # Avoid duplicate results
+        #print("SERP API Full Response:", serp_response.json())
+
+        # Extract relevant sections from SERP API response
+        organic_results = serp_results.get("organic_results", [])
+        top_stories = serp_results.get("top_stories", [])
+
+        # Combine the results
+        web_results = []
+
+        for result in organic_results + top_stories:
+            title = result.get("title", "Unknown Title")
+            link = result.get("link", "")
+            snippet = result.get("snippet", "No Description Available.")
+            image_link = result.get("thumbnail", "https://t3.ftcdn.net/jpg/05/88/70/78/360_F_588707867_pjpsqF5zUNMV1I2g8a3tQAYqinAxFkQp.jpg")
+            source = result.get("source", "Unknown Source")
+
+            if title and link and link not in seen_ids:
                 web_results.append({
                     "title": title,
-                    "description": description,
+                    "description": snippet,
                     "link": link,
-                    "image_link": thumbnail,
-                    "category": "Web Search",
-                    "published_date": "Unknown",
-                    "source": "Google Search",
+                    "image_link": image_link,
+                    "source": source,
+                    "published_date": result.get("date", "Unknown")
                 })
                 seen_ids.add(link)
 
@@ -431,14 +429,13 @@ async def search_news(data: dict):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {e}")
 
-
 @app.get("/all_news")
 async def get_all_news():
     try:
-        # Fetch a large number of results to allow deduplication
+        
         search_results = index.query(
-            vector=[0] * 384,  # Dummy vector
-            top_k=100,  # Fetch more results for deduplication
+            vector=[0] * 384,  
+            top_k=100,  
             include_metadata=True
         )
 
@@ -452,15 +449,13 @@ async def get_all_news():
             if base_link in seen_ids:
                 continue  # Skip duplicate entries
             seen_ids.add(base_link)  # Add to the seen set
-
-            default_image = "https://img.freepik.com/premium-vector/unavailable-movie-icon-no-video-bad-record-symbol_883533-383.jpg?w=360"
         
             if {"title", "description", "category"} <= metadata.keys():
                 news_feed.append({
                     "title": metadata["title"],
                     "description": metadata["description"],
                     "link": base_link,
-                    "image_link": metadata.get("image_link", "") or default_image,
+                    "image_link": metadata.get("image_link", "https://img.freepik.com/premium-vector/unavailable-movie-icon-no-video-bad-record-symbol_883533-383.jpg?w=360"),
                     "category": metadata["category"],
                     "published_date": metadata.get("published_date", "Unknown"),
                     "source": metadata.get("source", "Unknown"),
@@ -527,7 +522,7 @@ async def reset_password(data: PasswordReset):
         raise HTTPException(status_code=400, detail="Invalid token.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred: {e}")
-         
+             
 # Example protected endpoint
 @app.get("/protected-endpoint")
 async def protected_endpoint(token: str = Depends(oauth2_scheme)):
