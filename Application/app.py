@@ -310,15 +310,13 @@ def display_search_results(search_response):
     rag_results = search_response.get("rag_results", [])
     web_results = search_response.get("web_results", [])
 
-    st.subheader("Results Retrieved from RAG (Pinecone)")
     if rag_results:
-        display_news(rag_results, "RAG Results")
+        display_news(rag_results, "Top Results:")
     else:
         st.info("No relevant results found from RAG (Pinecone).")
 
-    st.subheader("Results Retrieved from Web Search (SERP API)")
     if web_results:
-        display_news(web_results, "Web Search Results")
+        display_news(web_results, "Results Retrieved from Web Search:")
     else:
         st.info("No relevant results found from Web Search.")
 
@@ -367,7 +365,7 @@ def display_news(news_feed, title):
                         """,
                         unsafe_allow_html=True
                     )
-
+    
 # Main page after login
 def main_page():
     if "logged_in" not in st.session_state or not st.session_state["logged_in"]:
@@ -422,6 +420,31 @@ def main_page():
         [data-testid="stSidebar"] * {
             color: black !important;
         }
+
+        /* Style the tab headers */
+        [data-baseweb="tab"] button {
+            font-size: 24px; /* Increase font size */
+            font-weight: bold; /* Make text bold */
+            color: red !important; /* Change text color to red */
+            padding: 10px 20px; /* Add padding for a larger clickable area */
+        }
+
+        /* Active tab styling */
+        [data-baseweb="tab"].css-1nliwu6 button {
+            font-size: 24px; /* Ensure active tab font size matches */
+            font-weight: bold;
+            color: white !important; /* Change active text color to white */
+            background-color: red !important; /* Highlight active tab with red background */
+            border-radius: 10px; /* Rounded corners for active tab */
+        }
+
+        /* Hover effect for tabs */
+        [data-baseweb="tab"] button:hover {
+            color: white !important;
+            background-color: red !important;
+            border-radius: 10px; /* Rounded corners on hover */
+        }
+
         </style>
         """,
         unsafe_allow_html=True
@@ -450,7 +473,7 @@ def main_page():
         if search_query:
             # Query the FastAPI /search_news endpoint
             response = requests.post(f"{FASTAPI_URL}/search_news", json={"query": search_query})
-        
+            
             if response.status_code == 200:
                 search_results = response.json()
                 display_search_results(search_results)
@@ -491,7 +514,7 @@ def main_page():
                 st.error("Failed to fetch personalized news. Please try again later.")
         except Exception as e:
             st.error(f"Error fetching personalized news: {e}")
-
+    
 # Main navigation
 if "logged_in" in st.session_state and st.session_state["logged_in"]:
     main_page()  # Show the homepage with tabs if the user is logged in
