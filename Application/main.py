@@ -344,25 +344,24 @@ async def get_personalized_news(data: dict):
                 seen_ids.add(base_link)  
 
                 default_image = "https://img.freepik.com/premium-vector/unavailable-movie-icon-no-video-bad-record-symbol_883533-383.jpg?w=360"
-        
+                default_description = "No description available."
+
                 if {"title", "description", "category"} <= metadata.keys():
                     news_feed.append({
                         "title": metadata["title"],
-                        "description": metadata["description"],
+                        "description": metadata.get("description", default_description),
                         "link": base_link,
-                        "image_link": metadata.get("image_link", "") or default_image,
+                        "image_link": metadata.get("image_link", default_image),
                         "category": metadata["category"],
                         "published_date": metadata.get("published_date", "Unknown"),
                         "source": metadata.get("source", "Unknown"),
                     })
 
-        
         news_feed.sort(key=lambda x: x.get("published_date", ""), reverse=True)
         return {"news": news_feed[:10]}  # Limit to top 10
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {e}")
-
 
 @app.post("/search_news")
 async def search_news(data: dict):
@@ -393,7 +392,7 @@ async def search_news(data: dict):
 
             rag_results.append({
                 "title": metadata.get("title", "Unknown Title"),
-                "description": metadata.get("description", "No Description Available."),
+                "description": metadata.get("description", "Description is unavailable"),
                 "link": base_link,
                 "image_link": metadata.get("image_link", "https://img.freepik.com/premium-vector/unavailable-movie-icon-no-video-bad-record-symbol_883533-383.jpg?w=360"),
                 "category": metadata.get("category", "Uncategorized"),
@@ -428,7 +427,7 @@ async def search_news(data: dict):
         for result in organic_results + top_stories:
             title = result.get("title", "Unknown Title")
             link = result.get("link", "")
-            snippet = result.get("snippet", "No Description Available.")
+            snippet = result.get("snippet", "Description is unavailable")
             image_link = result.get("thumbnail", "https://t3.ftcdn.net/jpg/05/88/70/78/360_F_588707867_pjpsqF5zUNMV1I2g8a3tQAYqinAxFkQp.jpg")
             source = result.get("source", "Unknown Source")
 
@@ -452,7 +451,6 @@ async def search_news(data: dict):
 @app.get("/all_news")
 async def get_all_news():
     try:
-        
         search_results = index.query(
             vector=[0] * 384,  
             top_k=100,  
@@ -470,12 +468,15 @@ async def get_all_news():
                 continue  # Skip duplicate entries
             seen_ids.add(base_link)  # Add to the seen set
         
+            default_image = "https://img.freepik.com/premium-vector/unavailable-movie-icon-no-video-bad-record-symbol_883533-383.jpg?w=360"
+            default_description = "No description available."
+
             if {"title", "description", "category"} <= metadata.keys():
                 news_feed.append({
                     "title": metadata["title"],
-                    "description": metadata["description"],
+                    "description": metadata.get("description", default_description),
                     "link": base_link,
-                    "image_link": metadata.get("image_link", "https://img.freepik.com/premium-vector/unavailable-movie-icon-no-video-bad-record-symbol_883533-383.jpg?w=360"),
+                    "image_link": metadata.get("image_link", default_image),
                     "category": metadata["category"],
                     "published_date": metadata.get("published_date", "Unknown"),
                     "source": metadata.get("source", "Unknown"),
@@ -603,7 +604,71 @@ def get_matches(username: str = Query(...)):
         raise HTTPException(status_code=500, detail=f"Error while fetching matches: {e}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
-             
+
+@app.post("/like_news")
+async def like_news(data: dict):
+    username = data.get("username")
+    news_id = data.get("news_id")
+    preference = data.get("preference", 1)  # 1 = Like, 0 = Dislike
+
+    if not username or not news_id:
+        raise HTTPException(status_code=400, detail="Missing required fields")
+
+    try:
+        conn = get_snowflake_connection()
+        cursor = conn.cursor()
+
+        # Ensure the user exists
+        cursor.execute(f"SELECT * FROM USERS WHERE USERNAME = '{username}'")
+        if not cursor.fetchone():
+            raise HTTPException(status_code=400, detail="Invalid username")
+
+        # Check if the preference already exists
+        cursor.execute(f"""
+            SELECT * FROM USER_NEWS_PREFERENCES 
+            WHERE USERNAME = '{username}' AND NEWS_ID = '{news_id}'
+        """)
+        result = cursor.fetchone()
+
+        if result:
+            # Update existing preference
+            query = f"""
+                UPDATE USER_NEWS_PREFERENCES
+                SET PREFERENCE = {preference}
+                WHERE USERNAME = '{username}' AND NEWS_ID = '{news_id}'
+            """
+        else:
+            # Insert new preference
+            query = f"""
+                INSERT INTO USER_NEWS_PREFERENCES (USERNAME, NEWS_ID, PREFERENCE)
+                VALUES ('{username}', '{news_id}', {preference})
+            """
+        
+        cursor.execute(query)
+        conn.commit()
+
+        #return {"message": "Preference updated successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@app.get("/get_preferences")
+async def get_preferences(username: str = Query(...)):
+    try:
+        conn = get_snowflake_connection()
+        cursor = conn.cursor()
+
+        query = f"""
+            SELECT NEWS_ID, PREFERENCE 
+            FROM USER_NEWS_PREFERENCES 
+            WHERE USERNAME = '{username}'
+        """
+        cursor.execute(query)
+        preferences = {row[0]: row[1] for row in cursor.fetchall()}
+
+        return {"preferences": preferences}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
 # Example protected endpoint
 @app.get("/protected-endpoint")
 async def protected_endpoint(token: str = Depends(oauth2_scheme)):

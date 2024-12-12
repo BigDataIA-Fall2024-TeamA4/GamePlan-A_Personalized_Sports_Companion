@@ -23,6 +23,21 @@ if "interests" not in st.session_state:
 if "expertise_level" not in st.session_state:
     st.session_state.expertise_level = "Beginner"  # Set a default value
 
+if "username" not in st.session_state:
+    st.session_state["username"] = None
+
+preferences_response = requests.get(
+    f"{FASTAPI_URL}/get_preferences", params={"username": st.session_state['username']}
+)
+
+if preferences_response.status_code == 200:
+    st.session_state['preferences'] = preferences_response.json().get('preferences', {})
+else:
+    st.session_state['preferences'] = {}
+
+if not st.session_state.get('username'):
+    st.info(" Please login!")
+
 # Function to create a sign-up form
 def sign_up():
     ''' Sign up form with validations '''
@@ -320,6 +335,23 @@ def display_search_results(search_response):
     else:
         st.info("No relevant results found from Web Search.")
 
+def update_preference(news_id, preference):
+    response = requests.post(
+        f"{FASTAPI_URL}/like_news",
+        json={
+            "username": st.session_state["username"],
+            "news_id": news_id,
+            "preference": preference,
+        }
+    )
+
+    if response.status_code == 200:
+        # Update session state after successful update
+        st.session_state['preferences'][news_id] = preference
+        st.success("Your preference has been saved!")
+    else:
+        st.error("Failed to update preference.")
+
 def display_news(news_feed, title):
     st.subheader(title)
 
@@ -340,12 +372,22 @@ def display_news(news_feed, title):
 
         # Populate articles in each column
         for col, article in zip(cols, news_feed[idx:idx+cols_per_row]):
-            if isinstance(article, dict):  # Ensure correct format
+            if isinstance(article, dict):  
+                news_id = article.get("link", "unknown")  # Use 'link' as the unique ID
+                current_preference = st.session_state['preferences'].get(news_id, -1)
+                
+                default_image = "https://img.freepik.com/premium-vector/unavailable-movie-icon-no-video-bad-record-symbol_883533-383.jpg?w=360"
+                image_link = article.get('image_link') or default_image
+                
+                if not image_link.startswith("http"):  # Ensure it's a valid link
+                    image_link = default_image
+
                 with col:
+                    # News Content
                     st.markdown(
                         f"""
                         <div style="border: 1px solid #ddd; border-radius: 10px; padding: 15px; background-color: #f9f9f9; height: 450px; width: 330px; overflow: hidden; margin: 10px;">
-                            <img src="{article.get('image_link', '')}" alt="{article.get('title', 'Image')}" style="width:100%; height:200px; object-fit:cover; border-radius: 8px;" />
+                            <img src="{image_link}" alt="{article.get('title', 'Image')}" style="width:100%; height:200px; object-fit:cover; border-radius: 8px;" />
                             <h4 style="margin-top:10px; height: 70px; overflow: hidden; text-overflow: ellipsis;">
                                 <a href="{article.get('link', '#')}" target="_blank" style="color: #0056b3; text-decoration: none;">
                                     {article.get('title', 'Untitled')}
@@ -361,10 +403,45 @@ def display_news(news_feed, title):
                                 Published: {article.get('published_date', 'Unknown')} | Source: {article.get('source', 'Unknown')}
                             </small>
                         </div>
-
                         """,
                         unsafe_allow_html=True
                     )
+
+                    # Like/Dislike Buttons with Dynamic Highlight
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        like_style = "background-color: #e0ffe0; border: 2px solid green; color: green; border-radius: 5px;" if current_preference == 1 else ""
+                        if st.button(
+                            "👍 Like",
+                            key=f"like_{news_id}_{title}",
+                            help="Click to Like",
+                        ):
+                            update_preference(news_id, 1)  # Set preference to 'Like'
+
+                    with col2:
+                        dislike_style = "background-color: #ffe0e0; border: 2px solid red; color: red; border-radius: 5px;" if current_preference == 0 else ""
+                        if st.button(
+                            "👎 Dislike",
+                            key=f"dislike_{news_id}_{title}",
+                            help="Click to Dislike",
+                        ):
+                            update_preference(news_id, 0)  # Set preference to 'Dislike'
+
+                    # Dynamic Highlighting CSS
+                    st.markdown(
+                        f"""
+                        <style>
+                        [key="like_{news_id}"] {{
+                            {like_style}
+                        }}
+                        [key="dislike_{news_id}"] {{
+                            {dislike_style}
+                        }}
+                        </style>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
 
 def fetch_sport_data():
     """Fetch fixtures for the user's interests."""
