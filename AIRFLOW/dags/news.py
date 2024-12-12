@@ -43,7 +43,7 @@ def classify_with_openai(title: str, description: str) -> Optional[str]:
                         "Consider Soccer as Football. "
                         "Rugby is not the same as Football or Soccer. "
                         "Baseball is not the same as Basketball. "
-                        "Formula 1, Motorsport, and Racing are not relevant. "
+                        "Formula 1, Formula One, F1, Motorsport, and Racing are not relevant. "
                         "Ignore any other sports not listed. "
                         "Return only the sports category as a single word. If the article is unrelated, return 'Ignore'."
                         "Do not try to guess a related category if the sport is unclear."
