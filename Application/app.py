@@ -365,6 +365,19 @@ def display_news(news_feed, title):
                         """,
                         unsafe_allow_html=True
                     )
+
+def fetch_sport_data():
+    """Fetch fixtures for the user's interests."""
+    try:
+        response = requests.get(f"{FASTAPI_URL}/matches/?username={st.session_state['username']}")
+        if response.status_code == 200:
+            return response.json()
+        else:
+            st.error("Failed to fetch sports data")
+            return None
+    except Exception as e:
+        st.error(f"Error: {e}")
+        return None
     
 # Main page after login
 def main_page():
@@ -515,6 +528,65 @@ def main_page():
         except Exception as e:
             st.error(f"Error fetching personalized news: {e}")
     
+    with tabs[2]:
+        fixtures_data = fetch_sport_data()
+        if fixtures_data:
+            for sport, data in fixtures_data.items():
+                st.subheader(f"{sport.capitalize()} Matches")
+                
+                if "error" in data:
+                    st.warning(data["error"])
+                elif sport == "football":
+                    matches = data.get("matches",[])
+                    if not matches:
+                        st.write("No Football matches found.")
+                    for match in matches:
+                        st.write(match)
+                        st.write(f"**{match['homeTeam']['name']}** vs **{match['awayTeam']['name']}**")
+                        st.write(f"Competition: {match['competition']['name']}")
+                        st.write(f"Date: {match['utcDate']}")
+                        st.divider()
+                elif sport == "basketball":
+                    games = data.get("response", [])
+                    if not games:
+                        st.write("No Basketball matches found.")
+                    for game in games:
+                        home_team = game.get("teams", {}).get("home", {}).get("name", "Unknown")
+                        away_team = game.get("teams", {}).get("away", {}).get("name", "Unknown")
+
+                        home_score = game.get("scores", {}).get("home", {}).get("total", "N/A")
+                        away_score = game.get("scores", {}).get("away", {}).get("total", "N/A")
+
+                        st.write(f"**{home_team}** vs **{away_team}**")
+                        st.write(f"Final Score: **{home_score} - {away_score}**")
+                        st.write(f"Date: {game.get('date', 'Unknown')} | Status: {game.get('status', {}).get('long', 'Unknown')}")
+                        st.divider()
+                elif sport == "tennis":
+                    results = data.get("results", [])
+                    if not results:
+                        st.write("No Tennis matches found.")
+                    for result in results:
+                        st.write(result)
+                        st.write(f"**{result['player1']['name']}** vs **{result['player2']['name']}**")
+                        st.write(f"Tournament: {result['tournament']['name']} | Surface: {result['tournament']['surface']}")
+                        st.write(f"Score: {result.get('score', 'Not available')}")
+                        st.divider()
+                elif sport == "cricket":
+                    matches = data.get("data", [])
+                    if not matches:
+                        st.write("No Cricket matches found.")
+                    for match in matches:
+                        team1 = match.get("teams", [None, None])[0]
+                        team2 = match.get("teams", [None, None])[1]
+                        st.write(f"**{team1}** vs **{team2}**")
+                        st.write(f"Venue: {match.get('venue', 'Unknown')} | Match Type: {match.get('matchType', 'Unknown')}")
+                        st.write(f"Status: {match.get('status', 'Unknown')} | Date: {match.get('date', 'Unknown')}")
+                        st.divider()
+                else:
+                    st.warning(f"No data available for {sport}.")
+        else:
+            st.error("Failed to fetch sports data.")
+
 # Main navigation
 if "logged_in" in st.session_state and st.session_state["logged_in"]:
     main_page()  # Show the homepage with tabs if the user is logged in

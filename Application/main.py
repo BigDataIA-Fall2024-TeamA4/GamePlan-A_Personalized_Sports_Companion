@@ -30,6 +30,11 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
+CRICKET_API_KEY = os.getenv('CRICKET_API_KEY')
+BASKETBALL_API_KEY= os.getenv('BASKETBALL_API_KEY')
+TENNIS_API_KEY= os.getenv('TENNIS_API_KEY')
+FOOTBALL_API_KEY= os.getenv('FOOTBALL_API_KEY')
+
 app = FastAPI()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
@@ -116,7 +121,22 @@ def send_reset_email(email, reset_link):
     except Exception as e:
         print(f"Failed to send email: {e}")
         return False
-       
+        
+def fetch_user_interests(username):
+    """Fetch user interests from Snowflake."""
+    conn = get_snowflake_connection()
+    cursor = conn.cursor()
+    cursor.execute(f"SELECT INTERESTS FROM USERS WHERE USERNAME = '{username}'")
+    result = cursor.fetchone()
+    conn.close()
+
+    if result and result[0]:
+        try:
+            return json.loads(result[0])  # Ensure it's parsed correctly
+        except json.JSONDecodeError as e:
+            print(f"JSON Decode Error: {e}")
+            return []
+    return []
 
 # Endpoint for user registration
 @app.post("/register")
@@ -522,6 +542,67 @@ async def reset_password(data: PasswordReset):
         raise HTTPException(status_code=400, detail="Invalid token.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred: {e}")
+
+@app.get("/matches/")
+def get_matches(username: str = Query(...)):
+    try:
+        # Fetch user interests from Snowflake
+        user_interests = fetch_user_interests(username)
+        if not user_interests:
+            raise HTTPException(status_code=404, detail=f"No interests found for user: {username}")
+
+        results = {}
+        for sport in user_interests:
+            sport = sport.lower()
+            if sport == "tennis":
+                url = "https://api.api-tennis.com/tennis/"
+                params = {
+                    "method": "get_fixtures",
+                    "APIkey": TENNIS_API_KEY,
+                    "date_start": datetime.now().strftime("%Y-%m-%d"),
+                    "date_stop": datetime.now().strftime("%Y-%m-%d")
+                }
+                response = requests.get(url, params=params)
+                response.raise_for_status()
+                results["tennis"] = response.json()
+
+            elif sport == "football":
+                url = "http://api.football-data.org/v4/matches"
+                headers = {"X-Auth-Token": FOOTBALL_API_KEY}
+                response = requests.get(url, headers=headers)
+                response.raise_for_status()
+                results["football"] = response.json()
+
+            elif sport == "cricket":
+                url = "https://api.cricapi.com/v1/matches"
+                params = {
+                    "apikey": CRICKET_API_KEY,
+                    "offset": 0
+                }
+                response = requests.get(url, params=params)
+                response.raise_for_status()
+                results["cricket"] = response.json()
+
+            elif sport == "basketball":
+                url = "https://v1.basketball.api-sports.io/games"
+                headers = {
+                    'x-rapidapi-host': "v1.basketball.api-sports.io",
+                    'x-rapidapi-key': BASKETBALL_API_KEY
+                }
+                params = {"date": datetime.now().strftime("%Y-%m-%d")}
+                response = requests.get(url, headers=headers, params=params)
+                response.raise_for_status()
+                results["basketball"] = response.json()
+
+            else:
+                results[sport] = {"error": f"{sport} is not a valid sport type"}
+        
+        return results
+
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Error while fetching matches: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
              
 # Example protected endpoint
 @app.get("/protected-endpoint")
