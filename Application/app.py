@@ -10,6 +10,11 @@ load_dotenv()
 # Fetch the FastAPI URL from environment variables
 FASTAPI_URL = os.getenv('FASTAPI_URL')
 
+EMAIL_USER = os.getenv("EMAIL_USER")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+SMTP_SERVER = os.getenv("SMTP_SERVER")
+SMTP_PORT = os.getenv("SMTP_PORT")
+
 st.set_page_config(layout="wide")
 
 if "interests" not in st.session_state:
@@ -116,7 +121,11 @@ def login():
                 st.rerun()  # Reload the main page
             else:
                 st.error("Invalid username or password!")
-
+    # Forgot Password Section
+    st.markdown("---")
+    st.markdown("**Forgot your password?**")
+    if st.button("Forgot Password"):
+        forgot_password()
 
 # Navigation menu for login/signup
 def menu_login():
@@ -164,12 +173,56 @@ def logout():
     st.session_state.clear()  
     st.rerun() 
 
+def forgot_password():
+    st.title("Forgot Password")
+    
+    # Correct text input type
+    email = st.text_input("Enter your email", type="default")  
+    
+    if st.button("Send Reset Link"):
+        # Ensure correct payload and endpoint
+        payload = {"email": email}
+        response = requests.post(f"{FASTAPI_URL}/forgot_password", json=payload)
+        
+        # Debugging logs
+        st.write("Payload Sent:", payload)
+        st.write("Response Status Code:", response.status_code)
+        
+        if response.status_code == 200:
+            st.success("Password reset link sent to your email.")
+        else:
+            st.error(response.json().get("detail", "Error sending reset link."))
+
+
+
+def reset_password():
+    st.title("Reset Password")
+    token = st.experimental_get_query_params().get("token", [""])[0]
+
+    if not token:
+        st.error("Invalid or missing reset token.")
+        return
+
+    new_password = st.text_input("New Password", type="password")
+    confirm_password = st.text_input("Confirm Password", type="password")
+
+    if st.button("Reset Password"):
+        if new_password != confirm_password:
+            st.error("Passwords do not match.")
+            return
+
+        response = requests.post(f"{FASTAPI_URL}/reset_password", json={"token": token, "new_password": new_password})
+        if response.status_code == 200:
+            st.success("Password reset successful! You can now log in with your new password.")
+        else:
+            st.error(response.json().get("detail", "Failed to reset password."))
+
 def update_profile():
     st.sidebar.subheader("Update Profile")
     
     if st.sidebar.button("Logout"):
         logout()
-        
+
     # Display email (non-editable)
     st.sidebar.text(f"Email: {st.session_state.get('email', 'N/A')}")
 
@@ -253,6 +306,21 @@ def update_profile():
         if not (password_updated or interests_updated or expertise_updated):
             st.sidebar.warning("No changes were made.")
 
+def display_search_results(search_response):
+    rag_results = search_response.get("rag_results", [])
+    web_results = search_response.get("web_results", [])
+
+    st.subheader("Results Retrieved from RAG (Pinecone)")
+    if rag_results:
+        display_news(rag_results, "RAG Results")
+    else:
+        st.info("No relevant results found from RAG (Pinecone).")
+
+    st.subheader("Results Retrieved from Web Search (SERP API)")
+    if web_results:
+        display_news(web_results, "Web Search Results")
+    else:
+        st.info("No relevant results found from Web Search.")
 
 def display_news(news_feed, title):
     st.subheader(title)
@@ -384,11 +452,8 @@ def main_page():
             response = requests.post(f"{FASTAPI_URL}/search_news", json={"query": search_query})
         
             if response.status_code == 200:
-                search_results = response.json().get("news", [])
-                if search_results:
-                    display_news(search_results, "Search Results")
-                else:
-                    st.info("No matching news articles found.")
+                search_results = response.json()
+                display_search_results(search_results)
             else:
                 st.error("Failed to fetch search results. Please try again later.")
         else:
