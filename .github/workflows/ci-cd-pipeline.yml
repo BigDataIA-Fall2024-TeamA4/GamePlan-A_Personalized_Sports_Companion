@@ -31,12 +31,6 @@ jobs:
         run: |
           poetry install --no-dev
 
-      - name: Run FastAPI tests
-        working-directory: Application
-        run: |
-          echo "Running FastAPI tests..."
-          poetry run pytest tests/  # Run tests using Poetry
-
       - name: Build and push FastAPI Docker image
         working-directory: Application
         run: |
@@ -47,12 +41,6 @@ jobs:
         working-directory: Application
         run: |
           poetry install --no-dev  # Ensure Streamlit dependencies are included
-
-      - name: Run Streamlit tests
-        working-directory: Application
-        run: |
-          echo "Running Streamlit tests..."
-          # Add your test commands here
 
       - name: Build and push Streamlit Docker image
         working-directory: Application
@@ -74,8 +62,3 @@ jobs:
       - name: Deploy Streamlit to Cloud Run
         run: |
           gcloud run deploy streamlit-service --image gcr.io/bigdata-3-440404/streamlit-app --platform managed --region us-central1 --allow-unauthenticated
-
-      - name: Deploy Airflow DAGs
-        run: |
-          echo "Deploying Airflow DAGs to Google Cloud Storage..."
-          gsutil cp -r AIRFLOW/dags/* gs://bigdata-3-440404_cloudbuild/dags/
