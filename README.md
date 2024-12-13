@@ -7,11 +7,8 @@ Gameplan: A Personalized Sports Companion is an innovative platform designed to 
 
 [![Codelabs](https://img.shields.io/badge/Codelabs-blue)](https://codelabs-preview.appspot.com/?file_id=https://docs.google.com/document/d/13bIFU6uHJsi0LIQrMZbMpwrMkvKQmYtk9Br9EjyJgJA/edit?tab=t.0#4)
 
-Youtube Video : [link]()
+Youtube Video : https://youtu.be/Bpwil7IP0kI
 
-Streamlit Application : [link]()
-
-FastAPI Deployment : [link]()
 
 **WE ATTEST THAT WE HAVEN'T USED ANY OTHER STUDENTS' WORK IN OUR ASSIGNMENT AND ABIDE BY THE POLICIES LISTED IN THE STUDENT HANDBOOK**
 
@@ -37,7 +34,8 @@ A backend powered by FastAPI that handles authentication, sports news fetching, 
 
 ## Architecture Diagram
 
-![Final Project- Team4 drawio](https://github.com/user-attachments/assets/cbb7eb9a-a84b-4337-a28e-5666d859ebf5)
+![Team4 drawio](https://github.com/user-attachments/assets/532f4ff2-73fe-4de0-bcd2-930020622e74)
+
 
 
 
@@ -60,7 +58,6 @@ A backend powered by FastAPI that handles authentication, sports news fetching, 
 
 ![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?logo=streamlit&logoColor=white) : Handles the frontend, displaying the UI for users to interact with sports news, fixtures, and skill upgrade recommendations.
 
-![Langchain](https://img.shields.io/badge/Langchain-037E7D?logo=langchain&logoColor=white) : Used to build the planning and executing agent, recommending related YouTube videos and nearby sports facilities based on user interest.
 
 ![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white) : Containerised the application, ensuring a consistent and portable environment for deployment.
 
