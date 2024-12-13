@@ -27,10 +27,6 @@ if "expertise_level" not in st.session_state:
 if "username" not in st.session_state:
     st.session_state["username"] = None
  
-preferences_response = requests.get(
-    f"{FASTAPI_URL}/get_preferences", params={"username": st.session_state['username']}
-)
-
 if st.session_state.get("username"):
     preferences_response = requests.get(
         f"{FASTAPI_URL}/get_preferences", params={"username": st.session_state['username']}
