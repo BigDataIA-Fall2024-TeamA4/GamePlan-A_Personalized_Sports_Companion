@@ -20,6 +20,11 @@ jobs:
         run: |
           echo "Removing hosted tool cache to free up space..."
           rm -rf /opt/hostedtoolcache
+
+      - name: Create .env File
+        run: |
+          cd Application
+          echo "${{ secrets.ENV_FILE }}" > .env
       
       - name: Set up Python
         uses: actions/setup-python@v2
