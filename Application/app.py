@@ -61,7 +61,7 @@ def sign_up():
        
         interests = st.multiselect(
             'Interests',
-            options=["Soccer", "Basketball", "Cricket", "Tennis", "American Football"],
+            options=["Basketball", "Cricket", "Tennis", "Football"],
             help="Select one or more sports interests!"
         )
         interests_json = json.dumps(interests)
