@@ -65,7 +65,4 @@ jobs:
         run: |
           gcloud run deploy streamlit-service --image gcr.io/bigdata-3-440404/streamlit-app --platform managed --region us-central1 --allow-unauthenticated
 
-      - name: Deploy Airflow DAGs
-        run: |
-          echo "Deploying Airflow DAGs to Google Cloud Storage..."
-          gsutil cp -r AIRFLOW/dags/* gs://bigdata-3-440404_cloudbuild/dags/
+     
