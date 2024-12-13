@@ -123,9 +123,9 @@ SNOWFLAKE_WAREHOUSE=your_snowflake_warehouse_name
 
 | Contributor         | Percentage | Tasks                                                                                                                                                                                                 |
 |---------------------|------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Vaishnavi Veerkumar** | 40%        |  |
-| **Sriram Venkatesh**   | 30%        |     |
-| **Siddharth Pawar**     | 30%        |  |
+| **Vaishnavi Veerkumar** | 40%        | Data extraction from rss feed, Webscraping for additional metadata related to news, Pinecone and S3 setup, Raw data storage in S3, Embedding storage in Pinecone, Airflow DAG,UI and backend for personalized news, search news and all news |
+| **Sriram Venkatesh**   | 30%        |  Contributed to creating a Planning Agent for fetching related Youtube Videos and NEarby facilities, Beautification of UI |
+| **Siddharth Pawar**     | 30%        | Login & SignUp setup on Fast API & Streamlit, Storing User interests and expertise level in Snowflake, API calls fetching and response formatting via FastAPI and Streamlit, Contributed to the implementation of RAG and Web Search agent for Sports Feed, Documentation : Codelabs, ReadME and Architecture Diagram |
 
 ## License
 
