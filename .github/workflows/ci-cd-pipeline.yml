@@ -47,7 +47,7 @@ jobs:
 
       - name: Authenticate to Google Cloud
         run: |
-          echo "${{ secrets.GCP_SA_KEY }}" > ${HOME}/gcp-key.json
+          echo "${{ secrets.NEW_GCP_SA_KEY }}" > ${HOME}/gcp-key.json
           gcloud auth activate-service-account bigdata2@bigdata-3-440404.iam.gserviceaccount.com --key-file=${HOME}/gcp-key.json
           rm ${HOME}/gcp-key.json
 
@@ -77,7 +77,7 @@ jobs:
         uses: google-github-actions/setup-gcloud@v0.2.0
         with:
           project_id: bigdata-3-440404
-          service_account_key: ${{ secrets.GCP_SA_KEY }}  # Use the secret you created
+          service_account_key: ${{ secrets.NEW_GCP_SA_KEY }}  # Use the secret you created
           export_default_credentials: true
 
       - name: Deploy FastAPI to Cloud Run
