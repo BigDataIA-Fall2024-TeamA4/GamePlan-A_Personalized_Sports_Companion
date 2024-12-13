@@ -563,7 +563,8 @@ def main_page():
             """
             <style>
             [data-testid="stAppViewContainer"] {
-                background-image: url('https://i.pinimg.com/736x/49/43/fa/4943fa3068eddc1b6e4ac00274e912f2.jpg');
+                # background-image: url('https://i.pinimg.com/736x/49/43/fa/4943fa3068eddc1b6e4ac00274e912f2.jpg');
+                background-color: black;
                 background-size: cover;
                 background-attachment: fixed;
                 background-position: center;
@@ -645,11 +646,12 @@ def main_page():
 
         /* Background image for the main page and login/signup */
         .stApp {
-            background-image: url('https://www.knoxalliance.store/wp-content/uploads/2017/05/light-color-background-images-for-website-top-hd-images-for-free-light-color-background-images-for-website-1-1024x768.jpg');
-            background-size: cover;
-            background-attachment: fixed;
-            background-position: center;
-            background-repeat: no-repeat;
+            # background-image: url('https://www.knoxalliance.store/wp-content/uploads/2017/05/light-color-background-images-for-website-top-hd-images-for-free-light-color-background-images-for-website-1-1024x768.jpg');
+            # background-size: cover;
+            # background-attachment: fixed;
+            # background-position: center;
+            # background-repeat: no-repeat;
+            background-color: black;
             color: black;
         }
 
