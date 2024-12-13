@@ -44,7 +44,12 @@ PINECONE_ENVIRONMENT = os.getenv("PINECONE_ENVIRONMENT")
 pc = Pinecone(api_key=PINECONE_API_KEY)
 index = pc.Index('sport-news')
 model = SentenceTransformer("BAAI/bge-small-en-v1.5")
- 
+
+EMAIL_USER = os.getenv("EMAIL_USER")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+SMTP_SERVER = os.getenv("SMTP_SERVER")
+SMTP_PORT = os.getenv("SMTP_PORT")
+
 # Snowflake connection
 def get_snowflake_connection():
     return snowflake.connector.connect(
@@ -316,16 +321,30 @@ def query_pinecone_latest_news(user_interests, hours_back=24):
  
     return news_feed
  
+def parse_date(date_str):
+    date_formats = [
+        "%a, %d %b %Y %H:%M:%S %Z",  # Format for BBC/Sky Sports
+        "%Y-%m-%dT%H:%M:%SZ",        # Format for Bleacher Report
+    ]
+    for date_format in date_formats:
+        try:
+            return datetime.strptime(date_str, date_format)
+        except ValueError:
+            continue
+    # If parsing fails
+    return datetime.min
+
 @app.post("/personalized_news")
 async def get_personalized_news(data: dict):
+
     try:
         user_interests = data.get("interests", [])
         if not user_interests:
             return {"news": []}
- 
+        
         news_feed = []
         seen_ids = set()  
- 
+
         for interest in user_interests:
             query_embedding = model.encode(interest).tolist()
             search_results = index.query(
@@ -334,43 +353,44 @@ async def get_personalized_news(data: dict):
                 include_metadata=True,
                 filter={"type": {"$eq": "category"}}
             )
- 
+
             for result in search_results.get("matches", []):
                 metadata = result.get("metadata", {})
                 base_link = result["id"].split("_")[0]  
- 
+
                 if base_link in seen_ids:
                     continue  
                 seen_ids.add(base_link)  
- 
                 default_image = "https://img.freepik.com/premium-vector/unavailable-movie-icon-no-video-bad-record-symbol_883533-383.jpg?w=360"
-       
+                default_description = "No description available."
+
                 if {"title", "description", "category"} <= metadata.keys():
                     news_feed.append({
                         "title": metadata["title"],
-                        "description": metadata["description"],
+                        "description": metadata.get("description", default_description),
                         "link": base_link,
-                        "image_link": metadata.get("image_link", "") or default_image,
+                        "image_link": metadata.get("image_link", default_image),
                         "category": metadata["category"],
                         "published_date": metadata.get("published_date", "Unknown"),
                         "source": metadata.get("source", "Unknown"),
                     })
- 
-       
-        news_feed.sort(key=lambda x: x.get("published_date", ""), reverse=True)
+
+        news_feed.sort(key=lambda x: parse_date(x.get("published_date", "")), reverse=True)
         return {"news": news_feed[:10]}  # Limit to top 10
- 
+    
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {e}")
- 
- 
+
+
+
 @app.post("/search_news")
 async def search_news(data: dict):
+
     try:
         query = data.get("query", "").lower()
         if not query:
             return {"rag_results": [], "web_results": []}
- 
+        
         # Query Pinecone (RAG)
         query_embedding = model.encode(query).tolist()
         pinecone_results = index.query(
@@ -378,32 +398,37 @@ async def search_news(data: dict):
             top_k=3,  
             include_metadata=True
         )
- 
+
         # Process Pinecone results
+
         rag_results = []
         seen_ids = set()
- 
+
         for result in pinecone_results.get("matches", []):
+
             metadata = result.get("metadata", {})
             base_link = result["id"].split("_")[0]  # Extract base ID
- 
+
             if base_link in seen_ids:
                 continue  # Skip duplicates
             seen_ids.add(base_link)
- 
+
             rag_results.append({
+
                 "title": metadata.get("title", "Unknown Title"),
-                "description": metadata.get("description", "No Description Available."),
+                "description": metadata.get("description", "Description is unavailable"),
                 "link": base_link,
                 "image_link": metadata.get("image_link", "https://img.freepik.com/premium-vector/unavailable-movie-icon-no-video-bad-record-symbol_883533-383.jpg?w=360"),
                 "category": metadata.get("category", "Uncategorized"),
                 "published_date": metadata.get("published_date", "Unknown"),
                 "source": metadata.get("source", "Unknown"),
-            })
- 
-        if "sports" not in query:
-            query += " sports"
- 
+            })       
+
+        rag_results.sort(key=lambda x: parse_date(x.get("published_date", "")), reverse=True)
+
+        if "sports news" not in query:
+            query += " sports news"
+
         # Query SERP API (Web Search)
         serp_api_url = "https://serpapi.com/search.json"
         params = {
@@ -415,23 +440,23 @@ async def search_news(data: dict):
         }
         serp_response = requests.get(serp_api_url, params=params)
         serp_results = serp_response.json()
- 
+
         #print("SERP API Full Response:", serp_response.json())
- 
         # Extract relevant sections from SERP API response
         organic_results = serp_results.get("organic_results", [])
         top_stories = serp_results.get("top_stories", [])
- 
+
         # Combine the results
         web_results = []
- 
+
         for result in organic_results + top_stories:
+
             title = result.get("title", "Unknown Title")
             link = result.get("link", "")
-            snippet = result.get("snippet", "No Description Available.")
+            snippet = result.get("snippet", "Description is unavailable")
             image_link = result.get("thumbnail", "https://t3.ftcdn.net/jpg/05/88/70/78/360_F_588707867_pjpsqF5zUNMV1I2g8a3tQAYqinAxFkQp.jpg")
             source = result.get("source", "Unknown Source")
- 
+
             if title and link and link not in seen_ids:
                 web_results.append({
                     "title": title,
@@ -442,48 +467,55 @@ async def search_news(data: dict):
                     "published_date": result.get("date", "Unknown")
                 })
                 seen_ids.add(link)
- 
+
+        web_results.sort(key=lambda x: parse_date(x.get("published_date", "")), reverse=True)
+
         # Return combined results
         return {"rag_results": rag_results, "web_results": web_results}
- 
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {e}")
- 
+
 @app.get("/all_news")
 async def get_all_news():
+
     try:
-       
         search_results = index.query(
             vector=[0] * 384,  
             top_k=100,  
             include_metadata=True
         )
- 
+
         news_feed = []
         seen_ids = set()  # Set to track unique base IDs
- 
+
         for result in search_results.get("matches", []):
             metadata = result.get("metadata", {})
             base_link = result["id"].split("_")[0]  # Extract base ID
- 
+
             if base_link in seen_ids:
                 continue  # Skip duplicate entries
+
             seen_ids.add(base_link)  # Add to the seen set
-       
+            default_image = "https://img.freepik.com/premium-vector/unavailable-movie-icon-no-video-bad-record-symbol_883533-383.jpg?w=360"
+            default_description = "No description available."
+
             if {"title", "description", "category"} <= metadata.keys():
                 news_feed.append({
                     "title": metadata["title"],
-                    "description": metadata["description"],
+                    "description": metadata.get("description", default_description),
                     "link": base_link,
-                    "image_link": metadata.get("image_link", "https://img.freepik.com/premium-vector/unavailable-movie-icon-no-video-bad-record-symbol_883533-383.jpg?w=360"),
+                    "image_link": metadata.get("image_link", default_image),
                     "category": metadata["category"],
                     "published_date": metadata.get("published_date", "Unknown"),
                     "source": metadata.get("source", "Unknown"),
+
                 })
- 
+        news_feed.sort(key=lambda x: parse_date(x.get("published_date", "")), reverse=True)
+
         # Return results
         return {"news": news_feed}
- 
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {e}")
  
@@ -603,7 +635,71 @@ def get_matches(username: str = Query(...)):
         raise HTTPException(status_code=500, detail=f"Error while fetching matches: {e}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
-             
+
+@app.post("/like_news")
+async def like_news(data: dict):
+    username = data.get("username")
+    news_id = data.get("news_id")
+    preference = data.get("preference", 1)  # 1 = Like, 0 = Dislike
+
+    if not username or not news_id:
+        raise HTTPException(status_code=400, detail="Missing required fields")
+
+    try:
+        conn = get_snowflake_connection()
+        cursor = conn.cursor()
+
+        # Ensure the user exists
+        cursor.execute(f"SELECT * FROM USERS WHERE USERNAME = '{username}'")
+        if not cursor.fetchone():
+            raise HTTPException(status_code=400, detail="Invalid username")
+
+        # Check if the preference already exists
+        cursor.execute(f"""
+            SELECT * FROM USER_NEWS_PREFERENCES 
+            WHERE USERNAME = '{username}' AND NEWS_ID = '{news_id}'
+        """)
+        result = cursor.fetchone()
+
+        if result:
+            # Update existing preference
+            query = f"""
+                UPDATE USER_NEWS_PREFERENCES
+                SET PREFERENCE = {preference}
+                WHERE USERNAME = '{username}' AND NEWS_ID = '{news_id}'
+            """
+        else:
+            # Insert new preference
+            query = f"""
+                INSERT INTO USER_NEWS_PREFERENCES (USERNAME, NEWS_ID, PREFERENCE)
+                VALUES ('{username}', '{news_id}', {preference})
+            """
+        
+        cursor.execute(query)
+        conn.commit()
+
+        #return {"message": "Preference updated successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@app.get("/get_preferences")
+async def get_preferences(username: str = Query(...)):
+    try:
+        conn = get_snowflake_connection()
+        cursor = conn.cursor()
+
+        query = f"""
+            SELECT NEWS_ID, PREFERENCE 
+            FROM USER_NEWS_PREFERENCES 
+            WHERE USERNAME = '{username}'
+        """
+        cursor.execute(query)
+        preferences = {row[0]: row[1] for row in cursor.fetchall()}
+
+        return {"preferences": preferences}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
 # Example protected endpoint
 @app.get("/protected-endpoint")
 async def protected_endpoint(token: str = Depends(oauth2_scheme)):

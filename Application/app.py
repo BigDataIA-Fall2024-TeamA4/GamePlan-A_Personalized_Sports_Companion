@@ -29,14 +29,29 @@ if "username" not in st.session_state:
 preferences_response = requests.get(
     f"{FASTAPI_URL}/get_preferences", params={"username": st.session_state['username']}
 )
- 
-if preferences_response.status_code == 200:
-    st.session_state['preferences'] = preferences_response.json().get('preferences', {})
+
+if st.session_state.get("username"):
+    preferences_response = requests.get(
+        f"{FASTAPI_URL}/get_preferences", params={"username": st.session_state['username']}
+    )
+    if preferences_response.status_code == 200:
+        st.session_state['preferences'] = preferences_response.json().get('preferences', {})
+    else:
+        st.session_state['preferences'] = {}
 else:
     st.session_state['preferences'] = {}
- 
+
 if not st.session_state.get('username'):
-    st.info(" Please login!")
+    st.info(" Please Signup or Login!")
+
+if "personalized_feed" not in st.session_state:
+    response = requests.post(f"{FASTAPI_URL}/personalized_news", json={
+        "interests": st.session_state["interests"]
+    })
+    if response.status_code == 200:
+        st.session_state["personalized_feed"] = response.json().get("news", [])
+    else:
+        st.error("Failed to fetch personalized news.")
  
 # Function to create a sign-up form
 def sign_up():
@@ -343,11 +358,20 @@ def update_preference(news_id, preference):
             "preference": preference,
         }
     )
- 
+
     if response.status_code == 200:
         # Update session state after successful update
         st.session_state['preferences'][news_id] = preference
-        st.success("Your preference has been saved!")
+        #st.success("Your preference has been saved!")
+
+        # Refresh personalized feed
+        response = requests.post(f"{FASTAPI_URL}/personalized_news", json={
+            "interests": st.session_state["interests"]
+        })
+        if response.status_code == 200:
+            st.session_state["personalized_feed"] = response.json().get("news", [])
+        else:
+            st.error("Failed to refresh personalized news.")
     else:
         st.error("Failed to update preference.")
  
@@ -409,39 +433,13 @@ def display_news(news_feed, title):
                     # Like/Dislike Buttons with Dynamic Highlight
                     col1, col2 = st.columns(2)
                     with col1:
-                        like_style = "background-color: #e0ffe0; border: 2px solid green; color: green; border-radius: 5px;" if current_preference == 1 else ""
-                        if st.button(
-                            "👍 Like",
-                            key=f"like_{news_id}_{title}",
-                            help="Click to Like",
-                        ):
-                            update_preference(news_id, 1)  # Set preference to 'Like'
- 
+                        if st.button("👍", key=f"like_{news_id}_{idx}", help="Like", disabled=(current_preference == 1)):
+                            update_preference(news_id, 1)
+        
                     with col2:
-                        dislike_style = "background-color: #ffe0e0; border: 2px solid red; color: red; border-radius: 5px;" if current_preference == 0 else ""
-                        if st.button(
-                            "👎 Dislike",
-                            key=f"dislike_{news_id}_{title}",
-                            help="Click to Dislike",
-                        ):
-                            update_preference(news_id, 0)  # Set preference to 'Dislike'
- 
-                    # Dynamic Highlighting CSS
-                    st.markdown(
-                        f"""
-                        <style>
-                        [key="like_{news_id}"] {{
-                            {like_style}
-                        }}
-                        [key="dislike_{news_id}"] {{
-                            {dislike_style}
-                        }}
-                        </style>
-                        """,
-                        unsafe_allow_html=True,
-                    )
- 
- 
+                        if st.button("👎", key=f"dislike_{news_id}_{idx}", help="Dislike", disabled=(current_preference == 0)):
+                            update_preference(news_id, 0)
+  
 def fetch_sport_data():
     """Fetch fixtures for the user's interests."""
     try:
