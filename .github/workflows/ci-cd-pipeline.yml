@@ -35,7 +35,7 @@ jobs:
       - name: Build and push FastAPI Docker image
         working-directory: Application
         run: |
-          docker build -t gcr.io/bigdata-3-440404/fastapi-app -f Dockerfile.fastapi .
+          docker build -t gcr.io/bigdata-3-440404/fastapi-app -f Application/Dockerfile.fastapi .
           docker push gcr.io/bigdata-3-440404/fastapi-app
 
       - name: Install dependencies for Streamlit
@@ -47,7 +47,7 @@ jobs:
       - name: Build and push Streamlit Docker image
         working-directory: Application
         run: |
-          docker build -t gcr.io/bigdata-3-440404/streamlit-app -f Dockerfile.streamlit .
+          docker build -t gcr.io/bigdata-3-440404/streamlit-app -f Application/Dockerfile.streamlit .
           docker push gcr.io/bigdata-3-440404/streamlit-app
 
       - name: Set up Google Cloud SDK
