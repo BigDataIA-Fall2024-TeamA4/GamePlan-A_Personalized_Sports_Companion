@@ -1,0 +1,32 @@
+[tool.poetry]
+name = "sports-practice-app"
+version = "0.1.0"
+description = ""
+authors = ["VenkyMan0810 <venkatesh.sr@northeastern.edu>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+langchain = "^0.3.11"
+openai = "^1.57.2"
+fastapi = "^0.115.6"
+uvicorn = "^0.32.1"
+requests = "^2.32.3"
+googlemaps = "^4.10.0"
+pyyaml = "^6.0.2"
+youtube-dl = "^2021.12.17"
+streamlit = "^1.41.0"
+google-api-python-client = "^2.155.0"
+python-dotenv = "^1.0.1"
+pydantic = "^2.10.3"
+folium = "^0.19.0"
+streamlit-folium = "^0.23.2"
+langchain-community = "^0.3.11"
+langchain-openai = "^0.2.12"
+langchain-core = "^0.3.24"
+geopy = "^2.4.1"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
