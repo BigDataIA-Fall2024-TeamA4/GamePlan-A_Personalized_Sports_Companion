@@ -11,9 +11,6 @@ from pinecone import Pinecone
 from sentence_transformers import SentenceTransformer
 import time
 import json
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 import requests
 from fastapi import Query
  
@@ -104,28 +101,6 @@ class PasswordReset(BaseModel):
     new_password: str
  
 # Send Reset Email Function
-def send_reset_email(email, reset_link):
-    try:
-        # Email message
-        message = MIMEMultipart("alternative")
-        message["Subject"] = "Password Reset Request"
-        message["From"] = EMAIL_USER
-        message["To"] = email
- 
-        text = f"Please click the link below to reset your password:\n{reset_link}"
-        html = f"<p>Please click the link below to reset your password:</p><a href='{reset_link}'>{reset_link}</a>"
-        message.attach(MIMEText(text, "plain"))
-        message.attach(MIMEText(html, "html"))
- 
-        # Send email
-        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
-            server.login(EMAIL_USER, EMAIL_PASSWORD)
-            server.sendmail(EMAIL_USER, email, message.as_string())
- 
-        return True
-    except Exception as e:
-        print(f"Failed to send email: {e}")
-        return False
        
 def fetch_user_interests(username):
     """Fetch user interests from Snowflake."""
@@ -518,63 +493,7 @@ async def get_all_news():
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {e}")
- 
-@app.post("/forgot_password")
-async def forgot_password(request: ForgotPasswordRequest):
-    email = request.email
- 
-    # Log email received
-    print(f"Received email for password reset: {email}")
- 
-    # Check if email exists in Snowflake
-    conn = get_snowflake_connection()
-    cursor = conn.cursor()
-    cursor.execute(f"SELECT USERNAME FROM USERS WHERE EMAIL = '{email}'")
-    result = cursor.fetchone()
- 
-    if not result:
-        raise HTTPException(status_code=404, detail="Email not found")
-       
- 
-    username = result[0]
- 
-    # Generate reset token
-    reset_token = jwt.encode({"sub": username, "exp": datetime.utcnow() + timedelta(hours=1)}, SECRET_KEY, algorithm=ALGORITHM)
- 
-    # Generate reset link
-    reset_link = f"http://localhost:8501/reset_password?token={reset_token}"
- 
-    # Send email and handle responses
-    if send_reset_email(email, reset_link):
-        return {"message": "Password reset email sent successfully."}
-    else:
-        raise HTTPException(status_code=500, detail="Failed to send reset email.")
- 
-# Endpoint: Reset Password
-@app.post("/reset_password")
-async def reset_password(data: PasswordReset):
-    try:
-        # Decode token
-        payload = jwt.decode(data.token, SECRET_KEY, algorithms=[ALGORITHM])
-        username = payload.get("sub")
- 
-        if not username:
-            raise HTTPException(status_code=400, detail="Invalid token")
- 
-        # Update password in Snowflake
-        conn = get_snowflake_connection()
-        cursor = conn.cursor()
-        cursor.execute(f"UPDATE USERS SET PASSWORD = '{data.new_password}' WHERE USERNAME = '{username}'")
-        conn.commit()
- 
-        return {"message": "Password reset successfully."}
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=400, detail="Reset token has expired.")
-    except JWTError:
-        raise HTTPException(status_code=400, detail="Invalid token.")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An error occurred: {e}")
- 
+  
 @app.get("/matches/")
 def get_matches(username: str = Query(...)):
     try:

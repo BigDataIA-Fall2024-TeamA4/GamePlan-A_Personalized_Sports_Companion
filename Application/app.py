@@ -3,6 +3,7 @@ import requests
 from dotenv import load_dotenv
 import os
 import json
+from datetime import datetime
  
 # Load environment variables
 load_dotenv()
@@ -52,7 +53,8 @@ if "personalized_feed" not in st.session_state:
         st.session_state["personalized_feed"] = response.json().get("news", [])
     else:
         st.error("Failed to fetch personalized news.")
- 
+
+
 # Function to create a sign-up form
 def sign_up():
     ''' Sign up form with validations '''
@@ -150,11 +152,6 @@ def login():
                 st.rerun()  # Reload the main page
             else:
                 st.error("Invalid username or password!")
-    # Forgot Password Section
-    st.markdown("---")
-    st.markdown("**Forgot your password?**")
-    if st.button("Forgot Password"):
-        forgot_password()
  
 # Navigation menu for login/signup
 def menu_login():
@@ -201,51 +198,7 @@ def update_expertise(username, expertise_level):
 def logout():
     st.session_state.clear()  
     st.rerun()
- 
-def forgot_password():
-    st.title("Forgot Password")
    
-    # Correct text input type
-    email = st.text_input("Enter your email", type="default")  
-   
-    if st.button("Send Reset Link"):
-        # Ensure correct payload and endpoint
-        payload = {"email": email}
-        response = requests.post(f"{FASTAPI_URL}/forgot_password", json=payload)
-       
-        # Debugging logs
-        st.write("Payload Sent:", payload)
-        st.write("Response Status Code:", response.status_code)
-       
-        if response.status_code == 200:
-            st.success("Password reset link sent to your email.")
-        else:
-            st.error(response.json().get("detail", "Error sending reset link."))
- 
- 
- 
-def reset_password():
-    st.title("Reset Password")
-    token = st.experimental_get_query_params().get("token", [""])[0]
- 
-    if not token:
-        st.error("Invalid or missing reset token.")
-        return
- 
-    new_password = st.text_input("New Password", type="password")
-    confirm_password = st.text_input("Confirm Password", type="password")
- 
-    if st.button("Reset Password"):
-        if new_password != confirm_password:
-            st.error("Passwords do not match.")
-            return
- 
-        response = requests.post(f"{FASTAPI_URL}/reset_password", json={"token": token, "new_password": new_password})
-        if response.status_code == 200:
-            st.success("Password reset successful! You can now log in with your new password.")
-        else:
-            st.error(response.json().get("detail", "Failed to reset password."))
- 
 def update_profile():
     st.sidebar.subheader("Update Profile")
    
@@ -340,12 +293,12 @@ def display_search_results(search_response):
     web_results = search_response.get("web_results", [])
  
     if rag_results:
-        display_news(rag_results, "Top Results:")
+        display_news(rag_results, "Top Results:","search")
     else:
         st.info("No relevant results found from RAG (Pinecone).")
  
     if web_results:
-        display_news(web_results, "Results Retrieved from Web Search:")
+        display_news(web_results, "Results Retrieved from Web Search:","web")
     else:
         st.info("No relevant results found from Web Search.")
  
@@ -375,7 +328,7 @@ def update_preference(news_id, preference):
     else:
         st.error("Failed to update preference.")
  
-def display_news(news_feed, title):
+def display_news(news_feed, title,tab_key):
     st.subheader(title)
  
     # Validate news_feed format
@@ -433,11 +386,11 @@ def display_news(news_feed, title):
                     # Like/Dislike Buttons with Dynamic Highlight
                     col1, col2 = st.columns(2)
                     with col1:
-                        if st.button("👍", key=f"like_{news_id}_{idx}", help="Like", disabled=(current_preference == 1)):
+                        if st.button("👍", key=f"{tab_key}_like_{news_id}_{idx}", help="Like", disabled=(current_preference == 1)):
                             update_preference(news_id, 1)
         
                     with col2:
-                        if st.button("👎", key=f"dislike_{news_id}_{idx}", help="Dislike", disabled=(current_preference == 0)):
+                        if st.button("👎", key=f"{tab_key}_dislike_{news_id}_{idx}", help="Dislike", disabled=(current_preference == 0)):
                             update_preference(news_id, 0)
   
 def fetch_sport_data():
@@ -452,7 +405,144 @@ def fetch_sport_data():
     except Exception as e:
         st.error(f"Error: {e}")
         return None
- 
+
+from datetime import datetime
+
+def display_fixtures(data, selected_sport):
+    st.sidebar.subheader("Fixtures Filter Options")
+
+    # Filter options
+    filter_options = ["All", "Latest Update", "Completed", "Upcoming"]
+    selected_filter = st.sidebar.radio("Select Filter:", filter_options, index=0)
+
+    st.subheader(f"{selected_sport.capitalize()} Matches")
+
+    if "error" in data:
+        st.warning(data["error"])
+    else:
+        cols = st.columns(3)  # Adjust number of columns for layout
+        matches = []
+
+        # Parse matches based on selected sport
+        if selected_sport == "football":
+            matches = data.get("matches", [])
+        elif selected_sport == "basketball":
+            matches = data.get("response", [])
+        elif selected_sport == "tennis":
+            matches = data.get("results", [])
+        elif selected_sport == "cricket":
+            matches = data.get("data", [])
+
+        if not matches:
+            st.write(f"No {selected_sport.capitalize()} matches found.")
+            return
+
+        # Helper function to parse dates
+        def parse_date(match, key="utcDate"):
+            date_str = match.get(key, match.get("date", match.get("event_date", "Unknown")))
+            try:
+                return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            except ValueError:
+                return datetime.min
+
+        # Filter matches based on selected filter
+        def filter_matches(match):
+            status = match.get("status", "")
+            if isinstance(status, dict):
+                status = status.get("long", "").lower()
+            else:
+                status = str(status).lower()
+            if selected_filter == "Latest Update":
+                return status in ["live", "in progress"]
+            elif selected_filter == "Completed":
+                return status in ["game finished", "completed", "ended"]
+            elif selected_filter == "Upcoming":
+                return status in ["not started", "timed"]
+            elif selected_filter == "All":
+                return True
+            return False
+
+        # Sort and filter matches
+        matches = [match for match in matches if filter_matches(match)]
+        matches = sorted(matches, key=lambda match: parse_date(match), reverse=False)  # Change `reverse` as needed
+
+        if not matches:
+            st.write(f"No {selected_sport.capitalize()} matches found for the selected filter.")
+            return
+
+        for i, match in enumerate(matches):
+            with cols[i % len(cols)]:
+                with st.container():
+                    # Extract team and match details
+                    if selected_sport == "football":
+                        home_team = match.get("homeTeam", {}).get("name", "Unknown")
+                        away_team = match.get("awayTeam", {}).get("name", "Unknown")
+                        home_logo = match.get("homeTeam", {}).get("crest", "")
+                        away_logo = match.get("awayTeam", {}).get("crest", "")
+                        match_date = parse_date(match).strftime("%Y-%m-%d %H:%M")
+                        competition = match.get("competition", {}).get("name", "Unknown")
+                        status = match.get("status", "Scheduled")
+                        if isinstance(status, dict):
+                            match_status = status.get("long", "Scheduled")
+                        else:
+                            match_status = str(status).capitalize()
+
+                    elif selected_sport == "basketball":
+                        home_team = match.get("teams", {}).get("home", {}).get("name", "Unknown")
+                        away_team = match.get("teams", {}).get("away", {}).get("name", "Unknown")
+                        home_logo = match.get("teams", {}).get("home", {}).get("logo", "")
+                        away_logo = match.get("teams", {}).get("away", {}).get("logo", "")
+                        home_score = match.get("scores", {}).get("home", {}).get("total", "-")
+                        away_score = match.get("scores", {}).get("away", {}).get("total", "-")
+                        match_date = match.get("date", "Unknown")
+                        match_status = match.get("status", {}).get("long", "Unknown")
+
+                    elif selected_sport == "tennis":
+                        home_team = match.get("player1", {}).get("name", "Unknown")
+                        away_team = match.get("player2", {}).get("name", "Unknown")
+                        home_logo = match.get("event_first_player_logo", "")
+                        away_logo = match.get("event_second_player_logo", "")
+                        match_date = parse_date(match, "event_date").strftime("%Y-%m-%d %H:%M")
+                        tournament = match.get("tournament", {}).get("name", "Unknown")
+                        surface = match.get("tournament", {}).get("surface", "Unknown")
+
+                    elif selected_sport == "cricket":
+                        home_team, away_team = match.get("teams", ["Unknown", "Unknown"])
+                        home_logo, away_logo = "", ""  # Cricket API might not have team logos
+                        match_date = match.get("date", "Unknown")
+                        venue = match.get("venue", "Unknown")
+                        match_type = match.get("matchType", "Unknown")
+                        match_status = match.get("status", "Unknown")
+
+                    # Default logo
+                    default_logo = "https://cdn-icons-png.flaticon.com/512/6855/6855128.png"
+                    home_logo = home_logo if home_logo.startswith("http") else default_logo
+                    away_logo = away_logo if away_logo.startswith("http") else default_logo
+
+                    # Render match details
+                    st.markdown(
+                        f"""
+                        <div style="border: 1px solid #ddd; border-radius: 10px; padding: 15px; background-color: #fff;">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                                <div style="text-align: center;">
+                                    <img src="{home_logo}" alt="{home_team}" style="height: 80px; width: 80px; border-radius: 5px;" />
+                                    <p style="margin: 5px 0; font-weight: bold;">{home_team}</p>
+                                </div>
+                                <div style="font-size: 20px; font-weight: bold;">vs</div>
+                                <div style="text-align: center;">
+                                    <img src="{away_logo}" alt="{away_team}" style="height: 80px; width: 80px; border-radius: 5px;" />
+                                    <p style="margin: 5px 0; font-weight: bold;">{away_team}</p>
+                                </div>
+                            </div>
+                            <div style="text-align: center; color: #666;">
+                                <p><b>Date:</b> {match_date}</p>
+                                <p><b>Status:</b> {match_status}</p>
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
 # Main page after login
 def main_page():
     if "logged_in" not in st.session_state or not st.session_state["logged_in"]:
@@ -508,33 +598,25 @@ def main_page():
             color: black !important;
         }
  
-        /* Style the tab headers */
-        [data-baseweb="tab"] button {
+        div[data-testid="stHorizontalBlock"] button {
             font-size: 24px; /* Increase font size */
             font-weight: bold; /* Make text bold */
-            color: red !important; /* Change text color to red */
-            padding: 10px 20px; /* Add padding for a larger clickable area */
+            color: red; /* Change text color */
+            padding: 10px 20px; /* Add padding for spacing */
         }
- 
-        /* Active tab styling */
-        [data-baseweb="tab"].css-1nliwu6 button {
-            font-size: 24px; /* Ensure active tab font size matches */
+
+        div[data-testid="stHorizontalBlock"] button[data-selected="true"] {
+            font-size: 28px; /* Larger font size for active tab */
             font-weight: bold;
-            color: white !important; /* Change active text color to white */
-            background-color: red !important; /* Highlight active tab with red background */
+            color: white; /* Change active text color */
+            background-color: red; /* Highlight active tab */
             border-radius: 10px; /* Rounded corners for active tab */
         }
- 
-        /* Hover effect for tabs */
-        [data-baseweb="tab"] button:hover {
-            color: white !important;
-            background-color: red !important;
+
+        div[data-testid="stHorizontalBlock"] button:hover {
+            color: white;
+            background-color: red; /* Match hover styling */
             border-radius: 10px; /* Rounded corners on hover */
-        }
- 
-        [data-testid="stSidebar"] button {
-            background-color: #E6E6FA !important; /* Lavender or desired color */
-            color: black !important; /* Text color */
         }
  
         </style>
@@ -579,13 +661,13 @@ def main_page():
                     try:
                         all_news = response.json()
                         st.session_state["all_news"] = all_news  # Cache the news articles
-                        display_news(st.session_state["all_news"], "All News")
+                        display_news(st.session_state["all_news"], "All News","all_news")
                     except Exception as e:
                         st.error(f"Error parsing news data: {e}")
                 else:
                     st.error("Failed to fetch today's news. Please try again later.")
             else:
-                display_news(st.session_state["all_news"], "All News")
+                display_news(st.session_state["all_news"], "All News","all_news")
  
  
     with tabs[0]:
@@ -601,7 +683,7 @@ def main_page():
             response = requests.post(f"{FASTAPI_URL}/personalized_news", json={"interests": user_interests})
             if response.status_code == 200:
                 personalized_news = response.json()
-                display_news(personalized_news, "Personalized News")
+                display_news(personalized_news, "Personalized News","personalized")
             else:
                 st.error("Failed to fetch personalized news. Please try again later.")
         except Exception as e:
@@ -611,90 +693,9 @@ def main_page():
         fixtures_data = fetch_sport_data()
         if fixtures_data:
             selected_sport = st.selectbox("Select a sport", list(fixtures_data.keys()))
-        data = fixtures_data[selected_sport]
-       
-        st.subheader(f"{selected_sport.capitalize()} Matches")
-       
-        if "error" in data:
-            st.warning(data["error"])
-        else:
-            cols = st.columns(3)
-            if selected_sport == "football":
-                matches = data.get("matches", [])
-                if not matches:
-                    st.write("No Football matches found.")
-                else:
-                    for i, match in enumerate(matches):
-                        with cols[i % 3]:
-                            with st.container():
-                                st.markdown("""<div style="border: 1px solid black; padding: 10px; margin-bottom: 10px;">""",
-                                          unsafe_allow_html=True)
-                                st.write(f"**{match['homeTeam']['name']}** vs **{match['awayTeam']['name']}**")
-                                st.write(f"Competition: {match['competition']['name']}")
-                                st.write(f"Date: {match['utcDate']}")
-                                st.markdown("</div>", unsafe_allow_html=True)
-           
-            elif selected_sport == "basketball":
-                games = data.get("response", [])
-                if not games:
-                    st.write("No Basketball matches found.")
-                else:
-                    for i, game in enumerate(games):
-                        with cols[i % 3]:
-                            with st.container():
-                                st.markdown("""<div style="border: 1px solid black; padding: 10px; margin-bottom: 10px;">""",
-                                          unsafe_allow_html=True)
-                                home_team = game.get("teams", {}).get("home", {}).get("name", "Unknown")
-                                away_team = game.get("teams", {}).get("away", {}).get("name", "Unknown")
-                                home_score = game.get("scores", {}).get("home", {}).get("total", "N/A")
-                                away_score = game.get("scores", {}).get("away", {}).get("total", "N/A")
-                               
-                                st.write(f"**{home_team}** vs **{away_team}**")
-                                st.write(f"**{home_score} - {away_score}**")
-                                st.write(f"Date: {game.get('date', 'Unknown')}")
-                                st.write(f"Status: {game.get('status', {}).get('long', 'Unknown')}")
-                                st.markdown("</div>", unsafe_allow_html=True)
-           
-            elif selected_sport == "tennis":
-                results = data.get("results", [])
-                if not results:
-                    st.write("No Tennis matches found.")
-                else:
-                    for i, result in enumerate(results):
-                        with cols[i % 3]:
-                            with st.container():
-                                st.markdown("""<div style="border: 1px solid black; padding: 10px; margin-bottom: 10px;">""",
-                                          unsafe_allow_html=True)
-                                st.write(f"**{result['player1']['name']}** vs **{result['player2']['name']}**")
-                                st.write(f"Tournament: {result['tournament']['name']}")
-                                st.write(f"Surface: {result['tournament']['surface']}")
-                                st.write(f"Score: {result.get('score', 'Not available')}")
-                                st.markdown("</div>", unsafe_allow_html=True)
-           
-            elif selected_sport == "cricket":
-                matches = data.get("data", [])
-                if not matches:
-                    st.write("No Cricket matches found.")
-                else:
-                    for i, match in enumerate(matches):
-                        with cols[i % 3]:
-                            with st.container():
-                                st.markdown("""<div style="border: 1px solid black; padding: 10px; margin-bottom: 10px;">""",
-                                          unsafe_allow_html=True)
-                                team1 = match.get("teams", [None, None])[0]
-                                team2 = match.get("teams", [None, None])[1]
-                                st.write(f"**{team1}** vs **{team2}**")
-                                st.write(f"Venue: {match.get('venue', 'Unknown')}")
-                                st.write(f"Match Type: {match.get('matchType', 'Unknown')}")
-                                st.write(f"Status: {match.get('status', 'Unknown')}")
-                                st.write(f"Date: {match.get('date', 'Unknown')}")
-                                st.markdown("</div>", unsafe_allow_html=True)
-                    else:
-                        st.warning(f"No data available for {selected_sport}.")
-            else:
-                st.error("Failed to fetch sports data.")
- 
- 
+            data = fixtures_data[selected_sport]
+            display_fixtures(data, selected_sport)
+  
 # Main navigation
 if "logged_in" in st.session_state and st.session_state["logged_in"]:
     main_page()  # Show the homepage with tabs if the user is logged in
