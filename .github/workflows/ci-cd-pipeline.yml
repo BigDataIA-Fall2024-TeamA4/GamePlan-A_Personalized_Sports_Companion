@@ -45,16 +45,16 @@ jobs:
         run: |
           echo "${{ secrets.GCP_P12_KEY }}" | base64 --decode > ${HOME}/gcp-key.p12
 
+      - name: Configure Docker for Google Cloud
+        run: |
+          gcloud auth configure-docker us-central1-docker.pkg.dev
+
       - name: Authenticate to Google Cloud
         run: |
           echo "${{ secrets.NEW_GCP_SA_KEY }}" > ${HOME}/gcp-key.json
           gcloud auth activate-service-account bigdata2@bigdata-3-440404.iam.gserviceaccount.com --key-file=${HOME}/gcp-key.json
           rm ${HOME}/gcp-key.json
 
-
-      - name: Configure Docker for Google Cloud
-        run: |
-          gcloud auth configure-docker us-central1-docker.pkg.dev
 
       - name: Build and push FastAPI Docker image
         working-directory: Application
