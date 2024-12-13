@@ -4,17 +4,12 @@ from dotenv import load_dotenv
 import os
 import json
 from datetime import datetime
- 
+
 # Load environment variables
 load_dotenv()
  
 # Fetch the FastAPI URL from environment variables
 FASTAPI_URL = os.getenv('FASTAPI_URL')
- 
-EMAIL_USER = os.getenv("EMAIL_USER")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
-SMTP_SERVER = os.getenv("SMTP_SERVER")
-SMTP_PORT = os.getenv("SMTP_PORT")
  
 st.set_page_config(layout="wide")
  
@@ -539,13 +534,67 @@ def display_fixtures(data, selected_sport):
                         unsafe_allow_html=True,
                     )
 
+def display_skill_plan(skill_plan):
+    for sport, details in skill_plan.items():
+        st.markdown(f"### **{sport}**", unsafe_allow_html=True)
+
+        st.markdown("#### **Recommended YouTube Training Videos:**")
+        for idx, video in enumerate(details["videos"], 1):
+            st.markdown(
+                f"- **{idx}. [ {video['title']} ]({video['url']})**",
+                unsafe_allow_html=True,
+            )
+
+        st.markdown("#### **Nearby Practice Facilities:**")
+        for idx, facility in enumerate(details["facilities"], 1):
+            st.markdown(
+                f"- **{idx}. {facility['name']}**  \n  *{facility['address']}*",
+                unsafe_allow_html=True,
+            )
+
+        # Add a horizontal divider for better readability
+        st.markdown("---")
+
+
 # Main page after login
 def main_page():
     if "logged_in" not in st.session_state or not st.session_state["logged_in"]:
-        st.title("GamePlan: Personalized Sports News")
+        st.markdown(
+            """
+            <style>
+            [data-testid="stAppViewContainer"] {
+                background-image: url('https://i.pinimg.com/736x/49/43/fa/4943fa3068eddc1b6e4ac00274e912f2.jpg');
+                background-size: cover;
+                background-attachment: fixed;
+                background-position: center;
+                background-repeat: no-repeat;
+            }
+            [data-testid="stHeader"] {
+                background-color: rgba(0,0,0,0);
+            }
+            .stApp {
+                color: black;
+            }
+            .center-title {
+                font-size: 48px;
+                font-weight: bold;
+                color: white;
+                text-align: center;
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                z-index: 1000;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+        st.markdown('<div class="center-title">GamePlan: Personalized Sports News</div>', unsafe_allow_html=True)
         login()
         return
-   
+
+    
     st.markdown(
         """
         <style>
@@ -593,7 +642,17 @@ def main_page():
         [data-testid="stSidebar"] * {
             color: black !important;
         }
- 
+
+        /* Background image for the main page and login/signup */
+        .stApp {
+            background-image: url('https://www.knoxalliance.store/wp-content/uploads/2017/05/light-color-background-images-for-website-top-hd-images-for-free-light-color-background-images-for-website-1-1024x768.jpg');
+            background-size: cover;
+            background-attachment: fixed;
+            background-position: center;
+            background-repeat: no-repeat;
+            color: black;
+        }
+
         div[data-testid="stHorizontalBlock"] button {
             font-size: 24px; /* Increase font size */
             font-weight: bold; /* Make text bold */
@@ -691,7 +750,37 @@ def main_page():
             selected_sport = st.selectbox("Select a sport", list(fixtures_data.keys()))
             data = fixtures_data[selected_sport]
             display_fixtures(data, selected_sport)
-  
+    
+    # Skill Upgrades Tab
+    with tabs[3]:
+        if "username" not in st.session_state or not st.session_state["username"]:
+            st.error("Please log in to access Skill Upgrades.")
+            return
+
+        username = st.session_state["username"]
+        location = st.text_input("Enter Your Location (City, State):", placeholder="e.g., New York, NY")
+
+        if st.button("Generate Skill Plan"):
+            if location:
+                with st.spinner("Generating skill plan..."):
+                # Call the new FastAPI LangChain-enabled endpoint
+                    response = requests.get(
+                        f"{FASTAPI_URL}/skill-plan-agent",
+                        params={"username": username, "location": location}
+                    )
+
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data["status"] == "success":
+                            st.markdown(f"### Skill Upgrade Plan for {username}")
+                            st.markdown(data["plan"])
+                        else:
+                            st.error(f"Error: {data['message']}")
+                    else:
+                        st.error(f"Failed to generate the skill plan. Status code: {response.status_code}")
+            else:
+                st.error("Please enter a valid location.")
+
 # Main navigation
 if "logged_in" in st.session_state and st.session_state["logged_in"]:
     main_page()  # Show the homepage with tabs if the user is logged in

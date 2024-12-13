@@ -13,7 +13,14 @@ import time
 import json
 import requests
 from fastapi import Query
- 
+from youtube_helper import fetch_youtube_videos
+from maps_helper import fetch_nearby_facilities
+from db_helper import fetch_user_profile
+from langchain.agents import AgentType
+from langchain.chat_models import ChatOpenAI
+from langchain.tools import Tool
+from langchain.agents import initialize_agent
+
 load_dotenv()
  
 # Fetching environment variables
@@ -42,10 +49,8 @@ pc = Pinecone(api_key=PINECONE_API_KEY)
 index = pc.Index('sport-news')
 model = SentenceTransformer("BAAI/bge-small-en-v1.5")
 
-EMAIL_USER = os.getenv("EMAIL_USER")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
-SMTP_SERVER = os.getenv("SMTP_SERVER")
-SMTP_PORT = os.getenv("SMTP_PORT")
+YOUTUBE_API_KEY =  os.getenv('YOUTUBE_API_KEY')
+MAPS_API_KEY =  os.getenv('MAPS_API_KEY')
 
 # Snowflake connection
 def get_snowflake_connection():
@@ -345,7 +350,7 @@ async def get_personalized_news(data: dict):
                         "description": metadata.get("description", default_description),
                         "link": base_link,
                         "image_link": metadata.get("image_link", default_image),
-                        "category": metadata["category"],
+                        "category": metadata.get("category", "Uncategorized"),
                         "published_date": metadata.get("published_date", "Unknown"),
                         "source": metadata.get("source", "Unknown"),
                     })
@@ -355,8 +360,6 @@ async def get_personalized_news(data: dict):
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {e}")
-
-
 
 @app.post("/search_news")
 async def search_news(data: dict):
@@ -618,6 +621,59 @@ async def get_preferences(username: str = Query(...)):
         return {"preferences": preferences}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+# Define Tools
+tools = [
+    Tool(
+        name="Fetch YouTube Videos",
+        func=lambda sport, expertise_level=None: fetch_youtube_videos(sport, expertise_level, YOUTUBE_API_KEY),
+        description="Fetch training videos from YouTube based on sport and expertise level."
+    ),
+    Tool(
+        name="Fetch Nearby Facilities",
+        func=lambda sport, location=None: fetch_nearby_facilities(sport, location, MAPS_API_KEY),
+        description="Find nearby practice facilities for the selected sport."
+    )
+]
+
+# Initialize the LLM
+llm = ChatOpenAI(temperature=0.7, model_name="gpt-3.5-turbo")
+
+# Create Agent
+agent = initialize_agent(
+    tools,
+    llm,
+    agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+    verbose=True,
+    max_iterations=5,
+    early_stopping_method="generate"
+)
+
+@app.get("/skill-plan-agent")
+async def generate_skill_plan(username: str, location: str):
+    try:
+        # Fetch user profile
+        interests, expertise_level = fetch_user_profile(username)
+        if not interests or not expertise_level:
+            raise HTTPException(status_code=404, detail="User profile not found.")
+
+        # Generate prompt for the agent
+        prompt = f"Generate a detailed skill upgrade plan for an athlete with {expertise_level} level in {', '.join(interests)}. Include related YouTube sport drill videos and nearby sports facilities for each sport in {location}. The final output should have the youtube links for each sport you found and the address of the facilities"
+
+        # Run the agent with a timeout using keyword arguments
+        agent_response = agent.run(input=prompt, timeout=60)
+
+        # Process the agent's response
+        if "Final Answer:" in agent_response:
+            skill_plan = agent_response.split("Final Answer:")[-1].strip()
+        else:
+            skill_plan = agent_response.strip()
+
+        return {"status": "success", "plan": skill_plan}
+    except Exception as e:
+        print(f"Error in skill-plan-agent endpoint: {e}")
+        return {"status": "error", "message": str(e)}
+
 
 # Example protected endpoint
 @app.get("/protected-endpoint")
