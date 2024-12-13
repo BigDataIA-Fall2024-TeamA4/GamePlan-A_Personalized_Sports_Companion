@@ -45,16 +45,16 @@ jobs:
         run: |
           echo "${{ secrets.GCP_P12_KEY }}" | base64 --decode > ${HOME}/gcp-key.p12
 
+      - name: Authenticate to Google Cloud with .p12 Key
+        run: |
+          gcloud auth activate-service-account \
+            bigdata2@bigdata-3-440404.iam.gserviceaccount.com \
+            --key-file=${HOME}/gcp-key.p12 \
+            --key-file-type=p12
+
       - name: Configure Docker for Google Cloud
         run: |
           gcloud auth configure-docker us-central1-docker.pkg.dev
-
-      - name: Authenticate to Google Cloud
-        run: |
-          echo "${{ secrets.NEW_GCP_SA_KEY }}" > ${HOME}/gcp-key.json
-          gcloud auth activate-service-account bigdata2@bigdata-3-440404.iam.gserviceaccount.com --key-file=${HOME}/gcp-key.json
-          rm ${HOME}/gcp-key.json
-
 
       - name: Build and push FastAPI Docker image
         working-directory: Application
@@ -77,13 +77,21 @@ jobs:
         uses: google-github-actions/setup-gcloud@v0.2.0
         with:
           project_id: bigdata-3-440404
-          service_account_key: ${{ secrets.NEW_GCP_SA_KEY }}  # Use the secret you created
+          service_account_key: ${{ secrets.GCP_P12_KEY }}  # Use the secret you created
           export_default_credentials: true
 
       - name: Deploy FastAPI to Cloud Run
         run: |
-          gcloud run deploy fastapi-service --image gcr.io/bigdata-3-440404/fastapi-app --platform managed --region us-central1 --allow-unauthenticated
+          gcloud run deploy fastapi-service \
+            --image gcr.io/bigdata-3-440404/fastapi-app \
+            --platform managed \
+            --region us-central1 \
+            --allow-unauthenticated
 
       - name: Deploy Streamlit to Cloud Run
         run: |
-          gcloud run deploy streamlit-service --image gcr.io/bigdata-3-440404/streamlit-app --platform managed --region us-central1 --allow-unauthenticated
+          gcloud run deploy streamlit-service \
+            --image gcr.io/bigdata-3-440404/streamlit-app \
+            --platform managed \
+            --region us-central1 \
+            --allow-unauthenticated
