@@ -41,10 +41,9 @@ jobs:
         run: |
           poetry install --no-dev
 
-      - name: Authenticate to Google Cloud
+      - name: Create .p12 Key File
         run: |
-          printf "%s" "${{ secrets.GCP_SA_KEY }}" > ${HOME}/gcp-key.json
-          gcloud auth activate-service-account --key-file=${HOME}/gcp-key.json
+          echo "${{ secrets.GCP_P12_KEY }}" | base64 --decode > ${HOME}/gcp-key.p12
 
       - name: Build and push FastAPI Docker image
         working-directory: Application
