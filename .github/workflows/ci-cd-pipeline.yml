@@ -31,7 +31,6 @@ jobs:
         run: |
           poetry install --no-dev
 
-
       - name: Build and push FastAPI Docker image
         working-directory: Application
         run: |
@@ -42,7 +41,6 @@ jobs:
         working-directory: Application
         run: |
           poetry install --no-dev  # Ensure Streamlit dependencies are included
-
 
       - name: Build and push Streamlit Docker image
         working-directory: Application
@@ -65,4 +63,3 @@ jobs:
         run: |
           gcloud run deploy streamlit-service --image gcr.io/bigdata-3-440404/streamlit-app --platform managed --region us-central1 --allow-unauthenticated
 
-     
