@@ -51,6 +51,7 @@ jobs:
           gcloud auth activate-service-account bigdata2@bigdata-3-440404.iam.gserviceaccount.com --key-file=${HOME}/gcp-key.json
           rm ${HOME}/gcp-key.json
 
+
       - name: Configure Docker for Google Cloud
         run: |
           gcloud auth configure-docker us-central1-docker.pkg.dev
